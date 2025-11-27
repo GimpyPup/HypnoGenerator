@@ -19,6 +19,12 @@
       box-shadow: inset 4px 4px 0 rgba(255, 255, 255, 0.1);
     }
 
+    /* Override Monokai theme background to match status field */
+    .cm-s-monokai.CodeMirror {
+      background-color: #1a1a1a !important;
+      color: #f0f0f0;
+    }
+
     .CodeMirror-focused {
       box-shadow: inset 4px 4px 0 rgba(255, 255, 255, 0.2), 0 0 0 2px #fff;
     }
@@ -114,6 +120,12 @@
 
   <script type="module">
     import * as tts from './piper-tts-web.js';
+    try {
+      await tts.flush();
+    } catch (err) {
+      console.warn('Failed to flush TTS cache on load', err);
+    }
+
     const textarea = document.getElementById('text');
     const gapSecEl = document.getElementById('gapSec');
     const startBtn = document.getElementById('start');
