@@ -208,6 +208,10 @@ button:disabled {
     margin-top: 0.2rem;
 }
 
+.rendered-audio {
+    display: none;
+}
+
 .inline {
     display: flex;
     align-items: center;
