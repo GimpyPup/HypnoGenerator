@@ -256,3 +256,64 @@ footer a:hover {
     background: #fff;
     color: #000;
 }
+
+/* Responsive layout tweaks for small screens */
+@media (max-width: 640px) {
+    body {
+        padding: 1rem;
+    }
+
+    .header {
+        flex-direction: column;
+        align-items: flex-start;
+        width: 100%;
+    }
+
+    .logo {
+        width: 64px;
+        height: 64px;
+    }
+
+    .container {
+        padding: 1.25rem;
+        box-shadow: 8px 8px 0 #333;
+    }
+
+    .inline {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .inline label {
+        width: 100%;
+    }
+
+    .controls {
+        flex-wrap: wrap;
+        width: 100%;
+        gap: 0.75rem;
+    }
+
+    /* Start / Pause / Stop */
+    .controls > button {
+        flex: 1 1 calc(33.333% - 0.75rem);
+        min-width: 0;
+        text-align: center;
+        padding-inline: 0.5rem;
+    }
+
+    /* Downloads row on its own line */
+    .controls-downloads {
+        flex-basis: 100%;
+        display: flex;
+        flex-wrap: nowrap;
+        gap: 0.75rem;
+    }
+
+    .controls-downloads button {
+        flex: 1 1 0;
+        min-width: 0;
+        text-align: center;
+        padding-inline: 0.5rem;
+    }
+}
