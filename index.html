@@ -197,6 +197,7 @@
     let streaming = false;
     let isPaused = false;
     let pauseResumeTrigger = null;
+    let pendingLiveGap = false;
     const bufferCache = new Map(); // text -> AudioBuffer
 
     function setStatus(msg) {
@@ -470,6 +471,7 @@
       pauseBtn.textContent = 'Pause';
       pauseBtn.classList.add('secondary'); // Only highlight when actively resuming
       isPaused = false;
+      pendingLiveGap = false;
       if (pauseResumeTrigger) {
         pauseResumeTrigger();
         pauseResumeTrigger = null;
@@ -579,6 +581,9 @@
             const lastLineIndex = cm.lineCount() - 1;
             if (lineNum === lastLineIndex) {
               lastHandle = currentHandle;
+              if (!pendingLiveGap) {
+                pendingLiveGap = true;
+              }
               await new Promise(r => setTimeout(r, 100));
               continue;
             }
@@ -595,13 +600,22 @@
                   clearTimeout(playbackEndTimer);
                   playbackEndTimer = null;
                 }
+                // Go back to the top of the loop; on the next iteration,
+                // this newly discovered line will be parsed and scheduled.
+                continue;
               } else {
                 // Still no line. Wait a bit and check again.
+                if (!pendingLiveGap) {
+                  pendingLiveGap = true;
+                }
                 await new Promise(r => setTimeout(r, 100));
                 continue;
               }
             } else {
               // Should not happen if we started with a handle
+              if (!pendingLiveGap) {
+                pendingLiveGap = true;
+              }
               await new Promise(r => setTimeout(r, 100));
               continue;
             }
@@ -620,6 +634,17 @@
               currentHandle = null;
             }
             continue;
+          }
+
+          if (pendingLiveGap) {
+            const waitMs = parsed.gapBeforeMs;
+            if (waitMs > 0) {
+              const seconds = (waitMs / 1000).toFixed(1);
+              setStatus(`Waiting for new line (${seconds}s)...`);
+              await new Promise((r) => setTimeout(r, waitMs));
+              if (!streaming) break;
+            }
+            pendingLiveGap = false;
           }
 
           setStatus(`Synthesising line...`);
