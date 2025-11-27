@@ -1,0 +1,9 @@
+# This is a comment line and will be skipped
+
+You are a rubber object
+
+[1] This line will speak 1 second after the last
+[2][x2] This line will repeat twice with a 2 second gap between repeats
+[5] This line will speak 5 seconds after the last line
+
+# Lines must have a blank line after them to be spoken. This allows you add dynamically add lines to the end of the script in a session and not have them spoken until you hit enter

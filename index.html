@@ -1,0 +1,1041 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GimpyPup's Hypno Generator</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/monokai.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/null/null.min.js"></script>
+  <style>
+    .CodeMirror {
+      height: 300px;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 0.85rem;
+      border: 4px solid #fff;
+      box-shadow: inset 4px 4px 0 rgba(255, 255, 255, 0.1);
+    }
+
+    .CodeMirror-focused {
+      box-shadow: inset 4px 4px 0 rgba(255, 255, 255, 0.2), 0 0 0 2px #fff;
+    }
+
+    .active-line-bg {
+      background-color: #001800 !important;
+    }
+
+    .active-line-text {
+      color: #4dff4d !important;
+    }
+  </style>
+
+<body>
+  <div class="header">
+    <img src="gimpyPup_logo.png" alt="GimpyPup Logo" class="logo">
+    <h1>GimpyPup's Hypno Generator</h1>
+  </div>
+  <div class="container">
+    <label for="text">PROGRAMMING SCRIPT</label>
+    <textarea id="text"></textarea>
+
+
+    <div class="inline" style="flex-wrap: wrap;">
+      <label for="gapSec">Default interval (seconds)</label>
+      <input id="gapSec" type="number" min="0" step="0.1" value="10" />
+    </div>
+    <div class="inline" style="flex-wrap: wrap; margin-top: 0.25rem;">
+      <label for="leadSec">Carrier signal (seconds)</label>
+      <input id="leadSec" type="number" min="0" step="0.1" value="30" />
+    </div>
+
+    <div class="controls">
+      <button id="start">Start</button>
+      <button id="pause" class="secondary" disabled>Pause</button>
+      <button id="stop" class="secondary" disabled>Stop</button>
+      <div class="controls-downloads">
+        <button id="download" class="secondary">Download WAV</button>
+        <button id="downloadMp3" class="secondary">Download MP3</button>
+      </div>
+    </div>
+
+    <div class="status" id="status">Ready.</div>
+    <div class="rendered-audio">
+      <p class="rendered-audio-label">Last rendered export:</p>
+      <audio id="renderedAudio" controls style="width: 100%; display: none;"></audio>
+    </div>
+
+    <div class="note" style="margin-top: 0.5rem;">
+      <strong>Programming Instructions:</strong>
+      <ul>
+        <li><strong>Script format:</strong> Enter one command per line. Each command will be processed with layered
+          repetition for deep programming.</li>
+        <li><strong>Default interval:</strong> The standard pause between commands (configurable above). Custom delays
+          override this setting.</li>
+        <li><strong>Carrier signal:</strong> Duration of the underlying binaural frequency before and after your
+          programming sequence.</li>
+        <li><strong>Internal notes:</strong> Lines beginning with <code>#</code> are ignored by the system. Use for your
+          own reference:<span class="note-example"><code># Deepening sequence begins</code></span></li>
+        <li><strong>Timed delays:</strong> Prefix <code>[5]</code> to insert a 5-second processing pause before
+          execution. Example:<span class="note-example"><code>[3] Obedience is pleasure</code></span></li>
+        <li><strong>Repetition cycles:</strong> Use <code>[x3]</code> to loop a command 3 times for reinforcement.</li>
+        <li><strong>Combined directives:</strong> Chain delay and repetition tags to script more complex responses.
+          Example:<span class="note-example"><code>[2][x5] Unit complies</code></span><span class="note-example">Speaks
+            “Unit complies” five times with a 2-second pause between each repetition.</span></li>
+      </ul>
+      <p style="margin: 0.5rem 0 0 0; font-style: italic; color: #aaa;">Execute the example protocol to test system
+        response.</p>
+    </div>
+
+    <footer
+      style="margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #e2e8f0; font-size: 0.85rem; color: #64748b;">
+      <p style="margin: 0.25rem 0;"><strong>Credits:</strong></p>
+      <ul style="margin: 0.5rem 0; padding-left: 1.5rem; line-height: 1.6;">
+        <li><a href="https://github.com/rhasspy/piper" target="_blank" rel="noopener"
+            style="color: #2563eb; text-decoration: none;">Piper TTS</a> by Rhasspy (MIT License) – Fast, local neural
+          text-to-speech</li>
+        <li><a href="https://onnxruntime.ai/" target="_blank" rel="noopener"
+            style="color: #2563eb; text-decoration: none;">ONNX Runtime</a> (MIT License) – Cross-platform machine
+          learning inferencing</li>
+        <li><a href="https://github.com/diffusion-studio/piper-wasm" target="_blank" rel="noopener"
+            style="color: #2563eb; text-decoration: none;">piper-wasm</a> by Diffusion Studio (MIT License) –
+          WebAssembly build of Piper</li>
+        <li><a href="https://github.com/Mintplex-Labs/piper-tts-web" target="_blank" rel="noopener"
+            style="color: #2563eb; text-decoration: none;">piper-tts-web</a> by Mintplex Labs (MIT License) – Web
+          wrapper for Piper TTS</li>
+        <li><a href="https://github.com/zhuker/lamejs" target="_blank" rel="noopener"
+            style="color: #2563eb; text-decoration: none;">lamejs</a> by zhuker (LGPL, via LAME) – JavaScript MP3
+          encoder used for on-the-fly downloads</li>
+      </ul>
+    </footer>
+  </div>
+
+  <script type="module">
+    import * as tts from './piper-tts-web.js';
+    const textarea = document.getElementById('text');
+    const gapSecEl = document.getElementById('gapSec');
+    const startBtn = document.getElementById('start');
+    const stopBtn = document.getElementById('stop');
+    const pauseBtn = document.getElementById('pause');
+    const downloadBtn = document.getElementById('download');
+    const downloadMp3Btn = document.getElementById('downloadMp3');
+    const statusEl = document.getElementById('status');
+    const renderedAudioEl = document.getElementById('renderedAudio');
+    const leadSecEl = document.getElementById('leadSec');
+
+    // Initialize CodeMirror
+    const cm = CodeMirror.fromTextArea(textarea, {
+      lineNumbers: true,
+      theme: 'monokai',
+      mode: 'null', // Plain text
+      lineWrapping: true,
+      viewportMargin: Infinity
+    });
+
+    // Load default programming script from external file for easier editing
+    fetch('default-script.txt')
+      .then((resp) => {
+        if (!resp.ok) throw new Error('Failed to load default script');
+        return resp.text();
+      })
+      .then((text) => {
+        cm.setValue(text);
+      })
+      .catch(() => {
+        // If loading fails, leave the editor empty and keep status as-is.
+      });
+
+    // Defaults and tuning
+    const DEFAULT_SPEED = 0.78;
+    const BASE_DELAY_MS = 800; // fixed overlap delay
+    const DEFAULT_GAP_MS = 10000; // 10-second pad between lines
+    const DEFAULT_LEAD_MS = 30000; // lead-in/out for binaural bed
+    const SAMPLE_RATE = 44100; // target render sample rate
+    const VOICE_LEVEL = 0.76; // global voice level scaler
+    const VOICE_ID = 'en_US-joe-medium';
+    const BEAT_FREQ_LEFT = 70;
+    const BEAT_FREQ_RIGHT = 70.5;
+    const BEAT_GAIN = 0.3;
+    const STEREO_PAN = 0.2; // pan offset per side when widening
+    const DEFAULT_PHASE_MS = 50;
+
+    // Initialize defaults
+    gapSecEl.value = DEFAULT_GAP_MS / 1000;
+    leadSecEl.value = DEFAULT_LEAD_MS / 1000;
+
+    function effectiveRate() {
+      return DEFAULT_SPEED;
+    }
+
+
+    function pickPhaseMs() {
+      const options = [50, 40, 30, 20, 10];
+      return options[Math.floor(Math.random() * options.length)];
+    }
+
+    let playbackContext = null;
+    let playbackSources = [];
+    let beatNodes = [];
+    let playbackEndTimer = null;
+    let lineStatusTimers = [];
+    let rendering = false;
+    let abortRender = false;
+    let streaming = false;
+    let isPaused = false;
+    let pauseResumeTrigger = null;
+    const bufferCache = new Map(); // text -> AudioBuffer
+
+    function setStatus(msg) {
+      statusEl.textContent = msg;
+    }
+
+    function currentGapMs() {
+      const sec = parseFloat(gapSecEl.value);
+      if (!Number.isFinite(sec) || sec < 0) {
+        gapSecEl.value = DEFAULT_GAP_MS / 1000;
+        return DEFAULT_GAP_MS;
+      }
+      return sec * 1000;
+    }
+
+    function currentLeadMs() {
+      const sec = parseFloat(leadSecEl.value);
+      if (!Number.isFinite(sec) || sec < 0) {
+        leadSecEl.value = DEFAULT_LEAD_MS / 1000;
+        return DEFAULT_LEAD_MS;
+      }
+      return sec * 1000;
+    }
+
+    function parseLines() {
+      const result = [];
+      const defaultGap = currentGapMs();
+
+      const lastLineIndex = cm.lineCount() - 1;
+      cm.eachLine((handle) => {
+        const lineNum = cm.getLineNumber(handle);
+        // Do not process the very last line in the document.
+        // It only becomes eligible once there's a newline after it.
+        if (lineNum === lastLineIndex) return;
+
+        const rawText = handle.text;
+        const trimmed = rawText.trim();
+        if (!trimmed) return;
+        const noComment = trimmed.split('#')[0].trim();
+        if (!noComment) return;
+
+        let rest = noComment;
+        let repeatCount = 1;
+        let gapBeforeMs = defaultGap;
+
+        // consume leading directives [xN] and/or [N]; gap applies before this line and between its repeats
+        // allow multiple directives chained
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          const m = rest.match(/^\[([^\]]+)\]\s*(.*)$/);
+          if (!m) break;
+          const token = m[1];
+          rest = (m[2] || '').trim();
+          const rep = token.match(/^x(\d+)$/i);
+          if (rep) {
+            repeatCount = Math.max(1, parseInt(rep[1], 10));
+            continue;
+          }
+          const gap = parseFloat(token);
+          if (Number.isFinite(gap)) {
+            gapBeforeMs = gap * 1000;
+            continue;
+          }
+        }
+
+        const text = rest.trim();
+        if (!text) return;
+
+        result.push({
+          text,
+          repeatCount,
+          repeatGapMs: gapBeforeMs,
+          gapBeforeMs,
+        });
+      });
+
+      return result;
+    }
+
+    function escapeHtml(str) {
+      return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function parseSingleLine(rawText) {
+      if (!rawText) return null;
+      const trimmed = rawText.trim();
+      if (!trimmed) return null;
+      const noComment = trimmed.split('#')[0].trim();
+      if (!noComment) return null;
+
+      let rest = noComment;
+      let repeatCount = 1;
+      let gapBeforeMs = currentGapMs();
+
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const m = rest.match(/^\[([^\]]+)\]\s*(.*)$/);
+        if (!m) break;
+        const token = m[1];
+        rest = (m[2] || '').trim();
+        const rep = token.match(/^x(\d+)$/i);
+        if (rep) {
+          repeatCount = Math.max(1, parseInt(rep[1], 10));
+          continue;
+        }
+        const gap = parseFloat(token);
+        if (Number.isFinite(gap)) {
+          gapBeforeMs = gap * 1000;
+          continue;
+        }
+      }
+
+      const text = rest.trim();
+      if (!text) return null;
+
+      return {
+        text,
+        repeatCount,
+        repeatGapMs: gapBeforeMs,
+        gapBeforeMs,
+      };
+    }
+
+    async function synthesizeLineToBuffer(text) {
+      const cacheKey = `${VOICE_ID}::${text}`;
+      const cached = bufferCache.get(cacheKey);
+      if (cached) return cached;
+
+      const wavBlob = await tts.predict({ text, voiceId: VOICE_ID });
+      const arrayBuf = await wavBlob.arrayBuffer();
+      const OfflineCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+      const offlineCtx = new OfflineCtx(2, 2, SAMPLE_RATE);
+      const audioBuffer = await offlineCtx.decodeAudioData(arrayBuf);
+
+      // If mono, convert to stereo
+      const stereoBuffer =
+        audioBuffer.numberOfChannels === 2
+          ? audioBuffer
+          : (() => {
+            const stereo = new AudioBuffer({
+              length: audioBuffer.length,
+              sampleRate: audioBuffer.sampleRate,
+              numberOfChannels: 2,
+            });
+            const mono = audioBuffer.getChannelData(0);
+            stereo.copyToChannel(mono, 0);
+            stereo.copyToChannel(mono, 1);
+            return stereo;
+          })();
+
+      bufferCache.set(cacheKey, stereoBuffer);
+      return stereoBuffer;
+    }
+
+    function scheduleBuffer(ctx, buffer, startTime, gainValue, rate, track = true, panValue = 0, stereo = { pan: true, width: true }, applyWidth = true, phaseOverrideMs = null) {
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.playbackRate.value = rate;
+      const gain = ctx.createGain();
+      const ramp = 0.01;
+      gain.gain.setValueAtTime(0.0001, startTime);
+      gain.gain.exponentialRampToValueAtTime(Math.max(gainValue, 0.0001), startTime + ramp);
+      gain.gain.setValueAtTime(gainValue, startTime + ramp);
+      const endTime = startTime + buffer.duration / rate;
+      gain.gain.setValueAtTime(gainValue, endTime - ramp);
+      gain.gain.exponentialRampToValueAtTime(0.0001, endTime);
+
+      if (stereo.width && applyWidth) {
+        const leftGain = ctx.createGain();
+        const rightGain = ctx.createGain();
+        const rightDelay = ctx.createDelay();
+        const phaseMs = phaseOverrideMs != null ? phaseOverrideMs : DEFAULT_PHASE_MS;
+        rightDelay.delayTime.value = Math.max(0, Math.min(0.1, phaseMs / 1000));
+        const panL = ctx.createStereoPanner();
+        const panR = ctx.createStereoPanner();
+        if (stereo.pan) {
+          // Keep width strong while biasing toward the intended panValue
+          const bias = Math.max(-1, Math.min(1, panValue));
+          panL.pan.value = Math.max(-1, Math.min(1, bias - 0.8));
+          panR.pan.value = Math.max(-1, Math.min(1, bias + 0.8));
+        } else {
+          panL.pan.value = -1; // hard left when width only
+          panR.pan.value = 1;  // hard right when width only
+        }
+
+        source.connect(gain);
+        gain.connect(leftGain).connect(panL).connect(ctx.destination);
+        gain.connect(rightGain).connect(rightDelay).connect(panR).connect(ctx.destination);
+      } else {
+        const panner = ctx.createStereoPanner();
+        const panBase = stereo.pan ? panValue : 0;
+        panner.pan.value = panBase;
+        source.connect(gain).connect(panner).connect(ctx.destination);
+      }
+      source.start(startTime);
+      if (track) playbackSources.push(source);
+    }
+
+    function scheduleEchoPass(ctx, buffer, startTime, rate, track, phaseMs) {
+      const delaySec = BASE_DELAY_MS / 1000;
+      scheduleBuffer(ctx, buffer, startTime, VOICE_LEVEL * 1.0, rate, track, 0, { pan: true, width: true }, true, phaseMs);
+      const panSecond = Math.random() < 0.5 ? -0.2 : 0.2;
+      const panThird = -panSecond;
+      scheduleBuffer(ctx, buffer, startTime + delaySec, VOICE_LEVEL * 0.3, rate, track, panSecond, { pan: true, width: false }, false);
+      scheduleBuffer(ctx, buffer, startTime + 2 * delaySec, VOICE_LEVEL * 0.05, rate, track, panThird, { pan: true, width: false }, false);
+      const mainEnd = startTime + buffer.duration / rate;
+      const echoEnd = startTime + 2 * delaySec + buffer.duration / rate;
+      return { mainEnd, echoEnd };
+    }
+
+    function startBinauralBeat(ctx, duration) {
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(BEAT_GAIN, ctx.currentTime + 0.25);
+      gain.gain.setValueAtTime(BEAT_GAIN, ctx.currentTime + duration - 0.25);
+      gain.gain.linearRampToValueAtTime(0, ctx.currentTime + duration);
+
+      const oscL = ctx.createOscillator();
+      oscL.frequency.value = BEAT_FREQ_LEFT;
+      const pannerL = ctx.createStereoPanner();
+      pannerL.pan.value = -1;
+
+      const oscR = ctx.createOscillator();
+      oscR.frequency.value = BEAT_FREQ_RIGHT;
+      const pannerR = ctx.createStereoPanner();
+      pannerR.pan.value = 1;
+
+      oscL.connect(pannerL).connect(gain).connect(ctx.destination);
+      oscR.connect(pannerR).connect(gain).connect(ctx.destination);
+      oscL.start();
+      oscR.start();
+      oscL.stop(ctx.currentTime + duration);
+      oscR.stop(ctx.currentTime + duration);
+      beatNodes.push(oscL, oscR, gain, pannerL, pannerR);
+    }
+
+    function stopPlayback() {
+      if (playbackEndTimer) {
+        clearTimeout(playbackEndTimer);
+        playbackEndTimer = null;
+      }
+      lineStatusTimers.forEach((t) => clearTimeout(t));
+      lineStatusTimers = [];
+      streaming = false;
+      playbackSources.forEach((s) => {
+        try {
+          s.stop();
+        } catch (_) { }
+      });
+      playbackSources = [];
+      beatNodes.forEach((n) => {
+        try {
+          if (n.stop) n.stop();
+          if (n.disconnect) n.disconnect();
+        } catch (_) { }
+      });
+      beatNodes = [];
+      if (playbackContext) {
+        try {
+          playbackContext.suspend();
+        } catch (_) { }
+      }
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      pauseBtn.disabled = true;
+      pauseBtn.textContent = 'Pause';
+      pauseBtn.classList.add('secondary'); // Only highlight when actively resuming
+      isPaused = false;
+      if (pauseResumeTrigger) {
+        pauseResumeTrigger();
+        pauseResumeTrigger = null;
+      }
+
+      // Clear CodeMirror highlights
+      cm.eachLine((handle) => {
+        cm.removeLineClass(handle, 'background', 'active-line-bg');
+        cm.removeLineClass(handle, 'text', 'active-line-text');
+      });
+
+      setStatus('Stopped.');
+    }
+
+    async function streamPlayback(maxLines = Infinity) {
+      let currentHandle = cm.getLineHandle(0);
+      if (!currentHandle) {
+        setStatus('Enter some text first.');
+        return;
+      }
+
+      if (playbackContext) {
+        stopPlayback();
+      }
+
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) {
+        setStatus('Web Audio API not supported in this browser.');
+        return;
+      }
+      if (!playbackContext) {
+        try {
+          playbackContext = new AudioCtx({ sampleRate: SAMPLE_RATE });
+        } catch (_) {
+          playbackContext = new AudioCtx();
+        }
+      }
+      if (playbackContext.state === 'suspended') {
+        try {
+          playbackContext.resume();
+        } catch (_) { }
+      }
+
+      streaming = true;
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+      pauseBtn.disabled = false;
+      setStatus('Preparing audio...');
+
+      const leadMs = currentLeadMs();
+      const leadSec = leadMs / 1000;
+      const rate = effectiveRate();
+
+      let cursor = playbackContext.currentTime + leadSec;
+      let maxEchoEnd = cursor;
+
+      let linesPlayed = 0;
+      let lastHandle = null;
+
+      try {
+        while (streaming && linesPlayed < maxLines) {
+          // Check for pause FIRST, before doing anything else
+          if (isPaused) {
+            if (playbackEndTimer) {
+              clearTimeout(playbackEndTimer);
+              playbackEndTimer = null;
+            }
+            setStatus('Paused (Background audio playing)...');
+            await new Promise(resolve => { pauseResumeTrigger = resolve; });
+            if (!streaming) break;
+            setStatus('Resuming...');
+
+            // After resume: Find the HIGHLIGHTED line and calculate what comes after it.
+            // This is the source of truth, whether we paused during main voice or echoes.
+            let highlightedHandle = null;
+            cm.eachLine((handle) => {
+              const info = cm.lineInfo(handle);
+              if (info && info.bgClass && info.bgClass.includes('active-line-bg')) {
+                highlightedHandle = handle;
+              }
+            });
+
+            if (highlightedHandle) {
+              // Update lastHandle to be the highlighted line
+              lastHandle = highlightedHandle;
+              const highlightedLineNum = cm.getLineNumber(highlightedHandle);
+
+              // Calculate what comes after the highlighted line NOW
+              if (highlightedLineNum !== null && highlightedLineNum + 1 < cm.lineCount()) {
+                currentHandle = cm.getLineHandle(highlightedLineNum + 1);
+              } else {
+                currentHandle = null;
+              }
+              if (playbackEndTimer) {
+                clearTimeout(playbackEndTimer);
+                playbackEndTimer = null;
+              }
+            }
+          }// Idle / Waiting Logic
+          // If we're sitting on the final line in the editor, don't play it yet.
+          // It only becomes eligible once there's a newline after it.
+          if (currentHandle) {
+            const lineNum = cm.getLineNumber(currentHandle);
+            const lastLineIndex = cm.lineCount() - 1;
+            if (lineNum === lastLineIndex) {
+              lastHandle = currentHandle;
+              await new Promise(r => setTimeout(r, 100));
+              continue;
+            }
+          }
+
+          if (!currentHandle) {
+            // We ran out of lines. Check if a new one appeared after the last one.
+            if (lastHandle) {
+              const lastLineNum = cm.getLineNumber(lastHandle);
+              if (lastLineNum !== null && lastLineNum + 1 < cm.lineCount()) {
+                currentHandle = cm.getLineHandle(lastLineNum + 1);
+                // Important: Clear the auto-stop timer because we found more work!
+                if (playbackEndTimer) {
+                  clearTimeout(playbackEndTimer);
+                  playbackEndTimer = null;
+                }
+              } else {
+                // Still no line. Wait a bit and check again.
+                await new Promise(r => setTimeout(r, 100));
+                continue;
+              }
+            } else {
+              // Should not happen if we started with a handle
+              await new Promise(r => setTimeout(r, 100));
+              continue;
+            }
+          }
+
+          // Parse the current element's text
+          const currentText = currentHandle.text;
+          const parsed = parseSingleLine(currentText);
+
+          if (!parsed) {
+            lastHandle = currentHandle;
+            const lineNum = cm.getLineNumber(currentHandle);
+            if (lineNum !== null && lineNum + 1 < cm.lineCount()) {
+              currentHandle = cm.getLineHandle(lineNum + 1);
+            } else {
+              currentHandle = null;
+            }
+            continue;
+          }
+
+          setStatus(`Synthesising line...`);
+          const buffer = await synthesizeLineToBuffer(parsed.text);
+          if (!streaming) break;
+
+          const { text, gapBeforeMs, repeatGapMs, repeatCount } = parsed;
+
+          // Iterate through repeats one by one
+          for (let r = 0; r < repeatCount; r++) {
+            // Pause check within repeats (but next-line logic is at top of main loop)
+            if (isPaused) {
+              if (playbackEndTimer) {
+                clearTimeout(playbackEndTimer);
+                playbackEndTimer = null;
+              }
+              setStatus('Paused (Background audio playing)...');
+              await new Promise(resolve => { pauseResumeTrigger = resolve; });
+              if (!streaming) break;
+              setStatus('Resuming...');
+            }
+
+            const gap = (linesPlayed === 0 && r === 0) ? 0 : (r === 0 ? gapBeforeMs / 1000 : repeatGapMs / 1000);
+            const startTime = Math.max(cursor + gap, playbackContext.currentTime);
+            const phaseMs = pickPhaseMs();
+
+            const repeatInfo = repeatCount > 1 ? ` (${r + 1}/${repeatCount})` : '';
+            setStatus(`Line: "${text}"${repeatInfo} | speed=${rate.toFixed(2)}x | phase=${phaseMs}ms`);
+
+            let { mainEnd, echoEnd } = scheduleEchoPass(playbackContext, buffer, startTime, rate, true, phaseMs);
+
+            cursor = mainEnd;
+            maxEchoEnd = Math.max(maxEchoEnd, echoEnd);
+
+            if (linesPlayed === 0 && r === 0) {
+              startBinauralBeat(playbackContext, 3600);
+            }
+
+            const lineDelayMs = Math.max(
+              0,
+              (startTime - playbackContext.currentTime) * 1000,
+            );
+
+            if (r === 0) {
+              const handleToHighlight = currentHandle;
+              const statusTimer = setTimeout(() => {
+                if (!streaming) return;
+
+                // Clear all highlights
+                cm.eachLine((h) => {
+                  cm.removeLineClass(h, 'background', 'active-line-bg');
+                  cm.removeLineClass(h, 'text', 'active-line-text');
+                });
+
+                cm.addLineClass(handleToHighlight, 'background', 'active-line-bg');
+                cm.addLineClass(handleToHighlight, 'text', 'active-line-text');
+                // Scroll into view
+                cm.scrollIntoView(handleToHighlight, 200);
+
+                setStatus(`Playing: "${text}"${repeatInfo}`);
+              }, lineDelayMs);
+              lineStatusTimers.push(statusTimer);
+            } else {
+              const statusTimer = setTimeout(() => {
+                if (!streaming) return;
+                setStatus(`Playing: "${text}"${repeatInfo}`);
+              }, lineDelayMs);
+              lineStatusTimers.push(statusTimer);
+            }
+
+            if (linesPlayed === 0 && r === 0 && lineDelayMs > 50) {
+              const seconds = (lineDelayMs / 1000).toFixed(1);
+              setStatus(`Waiting for lead-in (${seconds}s)...`);
+            }
+
+            const duration = mainEnd - startTime;
+            const waitTime = startTime + duration - 0.25;
+            const waitMs = Math.max(0, (waitTime - playbackContext.currentTime) * 1000);
+
+            if (waitMs > 0) {
+              await new Promise((resolve) => setTimeout(resolve, waitMs));
+              if (!streaming) break;
+            }
+          }
+
+          if (!streaming) break;
+
+          linesPlayed++;
+
+          // Decide what the NEXT line is based on the currently highlighted line.
+          // The highlighted line is the "source of truth" for where we are.
+          let highlightedHandle = null;
+          cm.eachLine((handle) => {
+            const info = cm.lineInfo(handle);
+            if (info && info.bgClass && info.bgClass.includes('active-line-bg')) {
+              highlightedHandle = handle;
+            }
+          });
+
+          let nextHandle = null;
+          if (highlightedHandle) {
+            lastHandle = highlightedHandle;
+            const highlightedLineNum = cm.getLineNumber(highlightedHandle);
+            if (highlightedLineNum !== null && highlightedLineNum + 1 < cm.lineCount()) {
+              nextHandle = cm.getLineHandle(highlightedLineNum + 1);
+            }
+          } else {
+            lastHandle = currentHandle;
+            const lineNum = currentHandle ? cm.getLineNumber(currentHandle) : null;
+            if (lineNum !== null && lineNum + 1 < cm.lineCount()) {
+              nextHandle = cm.getLineHandle(lineNum + 1);
+            }
+          }
+
+          currentHandle = nextHandle;
+        }
+      } finally {
+        // Cleanup if needed
+      }
+
+      if (streaming) {
+        setStatus('Playing...');
+      }
+    }
+
+    async function startPlayback() {
+      await streamPlayback(Infinity);
+    }
+
+    async function renderAndDownload(format = 'wav') {
+      const lines = parseLines();
+
+      if (!lines.length) {
+        setStatus('Enter some text first.');
+        return;
+      }
+
+      if (rendering) {
+        setStatus('Render in progress, please wait...');
+        return;
+      }
+
+      abortRender = false;
+      rendering = true;
+      downloadBtn.disabled = true;
+      if (downloadMp3Btn) downloadMp3Btn.disabled = true;
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+      pauseBtn.disabled = true;
+      setStatus('Rendering (offline)...');
+
+      try {
+        const buffers = [];
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (abortRender) throw new Error('Render cancelled');
+          setStatus(`Synthesising line ${i + 1}/${lines.length}...`);
+          const buf = await synthesizeLineToBuffer(line.text);
+          buffers.push({ ...line, buffer: buf });
+        }
+
+        const rate = effectiveRate();
+        const echoDelaySec = BASE_DELAY_MS / 1000;
+        const leadMs = currentLeadMs();
+        const leadSec = leadMs / 1000;
+
+        // Compute duration so the offline context is long enough
+        let cursor = leadSec;
+        let totalEchoEnd = 0;
+        buffers.forEach(({ buffer, gapBeforeMs, repeatGapMs, repeatCount }) => {
+          let startTime = cursor + (cursor === leadSec ? 0 : gapBeforeMs / 1000);
+          let passMainEnd = startTime + buffer.duration / rate;
+          let passEchoEnd = startTime + 2 * echoDelaySec + buffer.duration / rate;
+          for (let r = 1; r < repeatCount; r++) {
+            startTime = passMainEnd + repeatGapMs / 1000;
+            passMainEnd = startTime + buffer.duration / rate;
+            passEchoEnd = startTime + 2 * echoDelaySec + buffer.duration / rate;
+          }
+          cursor = passMainEnd;
+          totalEchoEnd = Math.max(totalEchoEnd, passEchoEnd);
+        });
+        totalEchoEnd += leadSec; // lead-out
+
+        const OfflineCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+        const offline = new OfflineCtx({
+          numberOfChannels: 2,
+          length: Math.ceil((totalEchoEnd + 0.5) * SAMPLE_RATE),
+          sampleRate: SAMPLE_RATE,
+        });
+
+        cursor = leadSec;
+        buffers.forEach(({ buffer, gapBeforeMs, repeatGapMs, repeatCount }, idx) => {
+          const gap = idx === 0 ? 0 : gapBeforeMs / 1000;
+          let startTime = cursor + gap;
+          const phaseMs = pickPhaseMs();
+          setStatus(`Rendering line ${idx + 1}/${buffers.length} | gapBefore=${gapBeforeMs}ms | repeats=${repeatCount} | speed=${rate.toFixed(2)}x | phase=${phaseMs}ms`);
+
+          let { mainEnd, echoEnd } = scheduleEchoPass(offline, buffer, startTime, rate, false, phaseMs);
+          for (let r = 1; r < repeatCount; r++) {
+            startTime = mainEnd + repeatGapMs / 1000;
+            ({ mainEnd, echoEnd } = scheduleEchoPass(offline, buffer, startTime, rate, false, pickPhaseMs()));
+          }
+
+          cursor = mainEnd;
+          totalEchoEnd = Math.max(totalEchoEnd, echoEnd);
+        });
+        startBinauralBeat(offline, totalEchoEnd);
+
+        const rendered = await offline.startRendering();
+        if (abortRender) throw new Error('Render cancelled');
+
+        if (format === 'mp3') {
+          setStatus('Encoding MP3 (this may take a moment)...');
+          const mp3Blob = await encodeMp3(rendered);
+          triggerDownload(mp3Blob, 'hypno.mp3');
+        } else {
+          const wav = encodeWav(rendered);
+          triggerDownload(wav, 'hypno.wav');
+        }
+        setStatus('Rendered and downloaded.');
+      } catch (err) {
+        setStatus(err.message || 'Render failed.');
+      } finally {
+        rendering = false;
+        abortRender = false;
+        downloadBtn.disabled = false;
+        if (downloadMp3Btn) downloadMp3Btn.disabled = false;
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        pauseBtn.disabled = true;
+      }
+    }
+
+    let lameLoadPromise = null;
+
+    function ensureLameJs() {
+      if (window.lamejs && window.lamejs.Mp3Encoder) {
+        return Promise.resolve(window.lamejs);
+      }
+      if (!lameLoadPromise) {
+        lameLoadPromise = new Promise((resolve, reject) => {
+          const existing = document.querySelector('script[data-lamejs]');
+          if (existing) {
+            existing.addEventListener('load', () => resolve(window.lamejs));
+            existing.addEventListener('error', () => reject(new Error('Failed to load MP3 encoder')));
+            return;
+          }
+          const script = document.createElement('script');
+          script.src = 'https://cdn.jsdelivr.net/npm/lamejs@1.2.0/lame.min.js';
+          script.async = true;
+          script.setAttribute('data-lamejs', 'true');
+          script.onload = () => {
+            if (window.lamejs && window.lamejs.Mp3Encoder) resolve(window.lamejs);
+            else reject(new Error('MP3 encoder unavailable in this browser.'));
+          };
+          script.onerror = () => reject(new Error('Failed to load MP3 encoder'));
+          document.head.appendChild(script);
+        });
+      }
+      return lameLoadPromise;
+    }
+
+    async function encodeMp3(buffer) {
+      const lamejs = await ensureLameJs();
+      const numChannels = 2;
+      const sampleRate = buffer.sampleRate;
+      const mp3encoder = new lamejs.Mp3Encoder(numChannels, sampleRate, 128);
+
+      const left = buffer.getChannelData(0);
+      const right = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : left;
+
+      const toInt16 = (float32Array) => {
+        const out = new Int16Array(float32Array.length);
+        for (let i = 0; i < float32Array.length; i++) {
+          let s = Math.max(-1, Math.min(1, float32Array[i]));
+          out[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+        }
+        return out;
+      };
+
+      const left16 = toInt16(left);
+      const right16 = toInt16(right);
+      const blockSize = 1152;
+      const mp3Data = [];
+
+      for (let i = 0; i < left16.length; i += blockSize) {
+        const leftChunk = left16.subarray(i, i + blockSize);
+        const rightChunk = right16.subarray(i, i + blockSize);
+        const mp3buf = mp3encoder.encodeBuffer(leftChunk, rightChunk);
+        if (mp3buf && mp3buf.length) mp3Data.push(mp3buf);
+      }
+
+      const end = mp3encoder.flush();
+      if (end && end.length) mp3Data.push(end);
+
+      return new Blob(mp3Data, { type: 'audio/mpeg' });
+    }
+
+    function encodeWav(buffer) {
+      const numChannels = 2;
+      const sampleRate = buffer.sampleRate;
+      const length = buffer.length;
+      const pcmData = new Int16Array(length * numChannels);
+
+      const channelData = [
+        buffer.getChannelData(0),
+        buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : buffer.getChannelData(0),
+      ];
+
+      for (let i = 0; i < length; i++) {
+        for (let ch = 0; ch < numChannels; ch++) {
+          let sample = channelData[ch][i];
+          sample = Math.max(-1, Math.min(1, sample));
+          pcmData[i * numChannels + ch] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+        }
+      }
+
+      const bufferLength = 44 + pcmData.byteLength;
+      const view = new DataView(new ArrayBuffer(bufferLength));
+
+      let offset = 0;
+      const writeString = (s) => {
+        for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i));
+        offset += s.length;
+      };
+
+      writeString('RIFF');
+      view.setUint32(offset, 36 + pcmData.byteLength, true); offset += 4;
+      writeString('WAVE');
+      writeString('fmt ');
+      view.setUint32(offset, 16, true); offset += 4; // fmt chunk size
+      view.setUint16(offset, 1, true); offset += 2; // PCM
+      view.setUint16(offset, numChannels, true); offset += 2;
+      view.setUint32(offset, sampleRate, true); offset += 4;
+      view.setUint32(offset, sampleRate * numChannels * 2, true); offset += 4; // byte rate
+      view.setUint16(offset, numChannels * 2, true); offset += 2; // block align
+      view.setUint16(offset, 16, true); offset += 2; // bits per sample
+      writeString('data');
+      view.setUint32(offset, pcmData.byteLength, true); offset += 4;
+
+      for (let i = 0; i < pcmData.length; i++, offset += 2) {
+        view.setInt16(offset, pcmData[i], true);
+      }
+      return new Blob([view], { type: 'audio/wav' });
+    }
+
+    function triggerDownload(blob, filename) {
+      const url = URL.createObjectURL(blob);
+
+      if (renderedAudioEl) {
+        renderedAudioEl.src = url;
+        renderedAudioEl.style.display = 'block';
+        try {
+          renderedAudioEl.load();
+        } catch (_) { }
+      }
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // Do not revoke the URL immediately so the audio element can keep using it.
+    }
+
+    startBtn.addEventListener('click', () => {
+      startPlayback().catch((err) => {
+        setStatus(err.message || 'Playback failed.');
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        pauseBtn.disabled = true;
+      });
+    });
+
+    pauseBtn.addEventListener('click', () => {
+      if (!streaming) return;
+
+      if (isPaused) {
+        // Resume
+        isPaused = false;
+        pauseBtn.textContent = 'Pause';
+        pauseBtn.classList.add('secondary'); // Back to non-highlighted when playing
+        if (pauseResumeTrigger) {
+          pauseResumeTrigger();
+          pauseResumeTrigger = null;
+        }
+      } else {
+        // Pause
+        isPaused = true;
+        pauseBtn.textContent = 'Resume';
+        pauseBtn.classList.remove('secondary'); // Highlight the Resume action
+        if (playbackEndTimer) {
+          clearTimeout(playbackEndTimer);
+          playbackEndTimer = null;
+        }
+      }
+    });
+
+    stopBtn.addEventListener('click', () => {
+      abortRender = true;
+      stopPlayback();
+      setStatus('Stopped.');
+    });
+
+    downloadBtn.addEventListener('click', () => {
+      renderAndDownload('wav').catch((err) => {
+        setStatus(err.message || 'Render failed.');
+        rendering = false;
+        downloadBtn.disabled = false;
+        if (downloadMp3Btn) downloadMp3Btn.disabled = false;
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+      });
+    });
+
+    if (downloadMp3Btn) {
+      downloadMp3Btn.addEventListener('click', () => {
+        renderAndDownload('mp3').catch((err) => {
+          setStatus(err.message || 'Render failed.');
+          rendering = false;
+          downloadBtn.disabled = false;
+          downloadMp3Btn.disabled = false;
+          startBtn.disabled = false;
+          stopBtn.disabled = true;
+        });
+      });
+    }
+
+    setStatus('Ready.');
+  </script>
+</body>
+
+</html>
