@@ -526,6 +526,9 @@
       let cursor = playbackContext.currentTime + leadSec;
       let maxEchoEnd = cursor;
 
+      // Start binaural beat immediately when playback begins
+      startBinauralBeat(playbackContext, 3600);
+
       let linesPlayed = 0;
       let lastHandle = null;
 
@@ -650,10 +653,6 @@
 
             cursor = mainEnd;
             maxEchoEnd = Math.max(maxEchoEnd, echoEnd);
-
-            if (linesPlayed === 0 && r === 0) {
-              startBinauralBeat(playbackContext, 3600);
-            }
 
             const lineDelayMs = Math.max(
               0,
