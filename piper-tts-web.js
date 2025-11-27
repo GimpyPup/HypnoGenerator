@@ -184,17 +184,26 @@ async function readBlob(url) {
   }
 }
 async function fetchBlob(url, callback) {
-  var _a;
   const res = await fetch(url);
-  const reader = (_a = res.body) == null ? void 0 : _a.getReader();
+  // Some browsers (especially older iOS Safari) do not support ReadableStream on fetch().
+  // In that case, fall back to res.blob() so we don't end up with an empty Blob and JSON parse errors.
+  const reader = res.body && res.body.getReader ? res.body.getReader() : null;
+  if (!reader) {
+    const blob = await res.blob();
+    const size = blob.size ?? 0;
+    callback == null ? void 0 : callback({
+      url,
+      total: size,
+      loaded: size
+    });
+    return blob;
+  }
   const contentLength = +(res.headers.get("Content-Length") ?? 0);
   let receivedLength = 0;
   let chunks = [];
-  while (reader) {
+  while (true) {
     const { done, value } = await reader.read();
-    if (done) {
-      break;
-    }
+    if (done) break;
     chunks.push(value);
     receivedLength += value.length;
     callback == null ? void 0 : callback({
@@ -291,7 +300,12 @@ const _TtsSession = class _TtsSession {
     __privateGet(this, _ort).env.wasm.wasmPaths = __privateGet(this, _wasmPaths).onnxWasm;
     const path = PATH_MAP[this.voiceId];
     const modelConfigBlob = await getBlob(`${HF_BASE}/${path}.json`);
-    __privateSet(this, _modelConfig, JSON.parse(await modelConfigBlob.text()));
+    const configText = await modelConfigBlob.text();
+    try {
+      __privateSet(this, _modelConfig, JSON.parse(configText));
+    } catch (e) {
+      throw new Error("Failed to load TTS model configuration. This often means the model JSON did not download completely (network issue, ad/tracker blocker, or iOS Safari limitation).");
+    }
     const modelBlob = await getBlob(
       `${HF_BASE}/${path}`,
       __privateGet(this, _progressCallback)
@@ -306,7 +320,11 @@ const _TtsSession = class _TtsSession {
     const phonemeIds = await new Promise(async (resolve) => {
       const module = await __privateGet(this, _createPiperPhonemize).call(this, {
         print: (data) => {
-          resolve(JSON.parse(data).phoneme_ids);
+          try {
+            resolve(JSON.parse(data).phoneme_ids);
+          } catch (e) {
+            throw new Error("Failed to parse TTS phoneme data from the model. This can happen if the WebAssembly TTS backend produced incomplete output (e.g., due to memory limits on this device/browser).");
+          }
         },
         printErr: (message) => {
           throw new Error(message);
