@@ -316,33 +316,6 @@ footer a:hover {
     color: #000;
 }
 
-/* CodeMirror editor overrides */
-.CodeMirror {
-    height: 300px;
-    font-family: 'Courier New', Courier, monospace;
-    font-size: 0.85rem;
-    border: 4px solid #fff;
-    box-shadow: inset 4px 4px 0 rgba(255, 255, 255, 0.1);
-}
-
-/* Override Monokai theme background to match status field */
-.cm-s-monokai.CodeMirror {
-    background-color: #1a1a1a !important;
-    color: #f0f0f0;
-}
-
-.CodeMirror-focused {
-    box-shadow: inset 4px 4px 0 rgba(255, 255, 255, 0.2), 0 0 0 2px #fff;
-}
-
-.active-line-bg {
-    background-color: #001800 !important;
-}
-
-.active-line-text {
-    color: #4dff4d !important;
-}
-
 /* Responsive layout tweaks for small screens */
 @media (max-width: 640px) {
     body {
