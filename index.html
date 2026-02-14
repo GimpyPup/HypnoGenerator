@@ -10,33 +10,6 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/monokai.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/null/null.min.js"></script>
-  <style>
-    .CodeMirror {
-      height: 300px;
-      font-family: 'Courier New', Courier, monospace;
-      font-size: 0.85rem;
-      border: 4px solid #fff;
-      box-shadow: inset 4px 4px 0 rgba(255, 255, 255, 0.1);
-    }
-
-    /* Override Monokai theme background to match status field */
-    .cm-s-monokai.CodeMirror {
-      background-color: #1a1a1a !important;
-      color: #f0f0f0;
-    }
-
-    .CodeMirror-focused {
-      box-shadow: inset 4px 4px 0 rgba(255, 255, 255, 0.2), 0 0 0 2px #fff;
-    }
-
-    .active-line-bg {
-      background-color: #001800 !important;
-    }
-
-    .active-line-text {
-      color: #4dff4d !important;
-    }
-  </style>
 
 <body>
   <div class="header">
@@ -48,15 +21,15 @@
     <textarea id="text"></textarea>
 
 
-    <div class="inline" style="flex-wrap: wrap;">
+    <div class="inline">
       <label for="gapSec">Default interval (seconds)</label>
       <input id="gapSec" type="number" min="0" step="0.1" value="10" />
     </div>
-    <div class="inline" style="flex-wrap: wrap; margin-top: 0.25rem;">
+    <div class="inline">
       <label for="leadSec">Carrier signal (seconds)</label>
       <input id="leadSec" type="number" min="0" step="0.1" value="30" />
     </div>
-    <div class="inline" style="flex-wrap: wrap; margin-top: 0.25rem;">
+    <div class="inline">
       <label for="bassFreq">Bass frequency (<span id="bassFreqValue">75</span> Hz)</label>
       <div class="range-wrap">
         <input id="bassFreq" type="range" min="75" max="200" step="25" value="75" list="bassFreqTicks" />
@@ -84,10 +57,10 @@
     <div class="status" id="status">Ready.</div>
     <div class="rendered-audio">
       <p class="rendered-audio-label">Last rendered export:</p>
-      <audio id="renderedAudio" controls style="width: 100%; display: none;"></audio>
+      <audio id="renderedAudio" controls></audio>
     </div>
 
-    <div class="note" style="margin-top: 0.5rem;">
+    <div class="note">
       <strong>Programming Instructions:</strong>
       <ul>
         <li><strong>Script format:</strong> Enter one command per line. Each command will be processed with layered
@@ -105,29 +78,17 @@
           Example:<span class="note-example"><code>[2][x5] Unit complies</code></span><span class="note-example">Speaks
             “Unit complies” five times with a 2-second pause between each repetition.</span></li>
       </ul>
-      <p style="margin: 0.5rem 0 0 0; font-style: italic; color: #aaa;">Execute the example protocol to test system
-        response.</p>
+      <p>Execute the example protocol to test system response.</p>
     </div>
 
-    <footer
-      style="margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #e2e8f0; font-size: 0.85rem; color: #64748b;">
-      <p style="margin: 0.25rem 0;"><strong>Credits:</strong></p>
-      <ul style="margin: 0.5rem 0; padding-left: 1.5rem; line-height: 1.6;">
-        <li><a href="https://github.com/rhasspy/piper" target="_blank" rel="noopener"
-            style="color: #2563eb; text-decoration: none;">Piper TTS</a> by Rhasspy (MIT License) – Fast, local neural
-          text-to-speech</li>
-        <li><a href="https://onnxruntime.ai/" target="_blank" rel="noopener"
-            style="color: #2563eb; text-decoration: none;">ONNX Runtime</a> (MIT License) – Cross-platform machine
-          learning inferencing</li>
-        <li><a href="https://github.com/diffusion-studio/piper-wasm" target="_blank" rel="noopener"
-            style="color: #2563eb; text-decoration: none;">piper-wasm</a> by Diffusion Studio (MIT License) –
-          WebAssembly build of Piper</li>
-        <li><a href="https://github.com/Mintplex-Labs/piper-tts-web" target="_blank" rel="noopener"
-            style="color: #2563eb; text-decoration: none;">piper-tts-web</a> by Mintplex Labs (MIT License) – Web
-          wrapper for Piper TTS</li>
-        <li><a href="https://github.com/zhuker/lamejs" target="_blank" rel="noopener"
-            style="color: #2563eb; text-decoration: none;">lamejs</a> by zhuker (LGPL, via LAME) – JavaScript MP3
-          encoder used for on-the-fly downloads</li>
+    <footer>
+      <p><strong>Credits:</strong></p>
+      <ul>
+        <li><a href="https://github.com/rhasspy/piper" target="_blank" rel="noopener">Piper TTS</a> by Rhasspy (MIT License) – Fast, local neural text-to-speech</li>
+        <li><a href="https://onnxruntime.ai/" target="_blank" rel="noopener">ONNX Runtime</a> (MIT License) – Cross-platform machine learning inferencing</li>
+        <li><a href="https://github.com/diffusion-studio/piper-wasm" target="_blank" rel="noopener">piper-wasm</a> by Diffusion Studio (MIT License) – WebAssembly build of Piper</li>
+        <li><a href="https://github.com/Mintplex-Labs/piper-tts-web" target="_blank" rel="noopener">piper-tts-web</a> by Mintplex Labs (MIT License) – Web wrapper for Piper TTS</li>
+        <li><a href="https://github.com/zhuker/lamejs" target="_blank" rel="noopener">lamejs</a> by zhuker (LGPL, via LAME) – JavaScript MP3 encoder used for on-the-fly downloads</li>
       </ul>
     </footer>
   </div>
