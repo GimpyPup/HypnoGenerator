@@ -56,6 +56,20 @@
       <label for="leadSec">Carrier signal (seconds)</label>
       <input id="leadSec" type="number" min="0" step="0.1" value="30" />
     </div>
+    <div class="inline" style="flex-wrap: wrap; margin-top: 0.25rem;">
+      <label for="bassFreq">Bass frequency (<span id="bassFreqValue">75</span> Hz)</label>
+      <div class="range-wrap">
+        <input id="bassFreq" type="range" min="75" max="200" step="25" value="75" list="bassFreqTicks" />
+        <datalist id="bassFreqTicks">
+          <option value="75" label="75"></option>
+          <option value="100" label="100"></option>
+          <option value="125" label="125"></option>
+          <option value="150" label="150"></option>
+          <option value="175" label="175"></option>
+          <option value="200" label="200"></option>
+        </datalist>
+      </div>
+    </div>
 
     <div class="controls">
       <button id="start">Start</button>
@@ -136,6 +150,12 @@
     const statusEl = document.getElementById('status');
     const renderedAudioEl = document.getElementById('renderedAudio');
     const leadSecEl = document.getElementById('leadSec');
+    const bassFreqEl = document.getElementById('bassFreq');
+    const bassFreqValueEl = document.getElementById('bassFreqValue');
+
+    bassFreqEl.addEventListener('input', () => {
+      bassFreqValueEl.textContent = bassFreqEl.value;
+    });
 
     // Initialize CodeMirror
     const cm = CodeMirror.fromTextArea(textarea, {
@@ -167,8 +187,8 @@
     const SAMPLE_RATE = 44100; // target render sample rate
     const VOICE_LEVEL = 0.76; // global voice level scaler
     const VOICE_ID = 'en_US-joe-medium';
-    const BEAT_FREQ_LEFT = 70;
-    const BEAT_FREQ_RIGHT = 70.5;
+    const DEFAULT_BASS_FREQ = 75;
+    const BINAURAL_OFFSET = 0.5; // right channel offset for binaural beat
     const BEAT_GAIN = 0.3;
     const STEREO_PAN = 0.2; // pan offset per side when widening
     const DEFAULT_PHASE_MS = 50;
@@ -211,6 +231,15 @@
         return DEFAULT_GAP_MS;
       }
       return sec * 1000;
+    }
+
+    function currentBassFreq() {
+      const val = parseInt(bassFreqEl.value, 10);
+      if (!Number.isFinite(val) || val < 75 || val > 200) {
+        bassFreqEl.value = DEFAULT_BASS_FREQ;
+        return DEFAULT_BASS_FREQ;
+      }
+      return val;
     }
 
     function currentLeadMs() {
@@ -420,13 +449,14 @@
       gain.gain.setValueAtTime(BEAT_GAIN, ctx.currentTime + duration - 0.25);
       gain.gain.linearRampToValueAtTime(0, ctx.currentTime + duration);
 
+      const bassFreq = currentBassFreq();
       const oscL = ctx.createOscillator();
-      oscL.frequency.value = BEAT_FREQ_LEFT;
+      oscL.frequency.value = bassFreq;
       const pannerL = ctx.createStereoPanner();
       pannerL.pan.value = -1;
 
       const oscR = ctx.createOscillator();
-      oscR.frequency.value = BEAT_FREQ_RIGHT;
+      oscR.frequency.value = bassFreq + BINAURAL_OFFSET;
       const pannerR = ctx.createStereoPanner();
       pannerR.pan.value = 1;
 
