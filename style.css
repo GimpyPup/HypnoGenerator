@@ -232,11 +232,22 @@ input[type="range"] {
     -webkit-appearance: none;
     appearance: none;
     width: 100%;
+    height: 26px;
+    background: transparent;
+    outline: none;
+    cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
     height: 6px;
     background: #1a1a1a;
     border: 3px solid #fff;
-    outline: none;
-    cursor: pointer;
+}
+
+input[type="range"]::-moz-range-track {
+    height: 6px;
+    background: #1a1a1a;
+    border: 3px solid #fff;
 }
 
 input[type="range"]::-webkit-slider-thumb {
