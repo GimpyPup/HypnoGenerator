@@ -36,6 +36,42 @@
     .active-line-text {
       color: #4dff4d !important;
     }
+
+    .held-line-bg {
+      background-color: #1a0000 !important;
+    }
+
+    .held-line-text {
+      color: #ff4d4d !important;
+    }
+
+    .held-line-hint {
+      color: #ff4d4d;
+      opacity: 0.6;
+      font-style: italic;
+      font-size: 0.8em;
+      margin-left: 1em;
+      pointer-events: none;
+      user-select: none;
+    }
+
+    .past-line-bg {
+      background-color: #1a1a0a !important;
+    }
+
+    .past-line-text {
+      color: #999966 !important;
+    }
+
+    .past-line-hint {
+      color: #999966;
+      opacity: 0.6;
+      font-style: italic;
+      font-size: 0.8em;
+      margin-left: 1em;
+      pointer-events: none;
+      user-select: none;
+    }
   </style>
 
 <body>
@@ -67,6 +103,19 @@
           <option value="150" label="150"></option>
           <option value="175" label="175"></option>
           <option value="200" label="200"></option>
+        </datalist>
+      </div>
+    </div>
+    <div class="inline">
+      <label for="voiceSpeed">Voice speed (<span id="voiceSpeedValue">0.00</span>)</label>
+      <div class="range-wrap">
+        <input id="voiceSpeed" type="range" min="-0.50" max="0.50" step="0.05" value="0" list="voiceSpeedTicks" />
+        <datalist id="voiceSpeedTicks">
+          <option value="-0.50" label="-0.50"></option>
+          <option value="-0.25" label="-0.25"></option>
+          <option value="0" label="0"></option>
+          <option value="0.25" label="+0.25"></option>
+          <option value="0.50" label="+0.50"></option>
         </datalist>
       </div>
     </div>
@@ -140,9 +189,19 @@
     const leadSecEl = document.getElementById('leadSec');
     const bassFreqEl = document.getElementById('bassFreq');
     const bassFreqValueEl = document.getElementById('bassFreqValue');
+    const voiceSpeedEl = document.getElementById('voiceSpeed');
+    const voiceSpeedValueEl = document.getElementById('voiceSpeedValue');
 
     bassFreqEl.addEventListener('input', () => {
       bassFreqValueEl.textContent = bassFreqEl.value;
+      var freq = parseInt(bassFreqEl.value, 10);
+      if (liveBeatOscL) liveBeatOscL.frequency.value = freq;
+      if (liveBeatOscR) liveBeatOscR.frequency.value = freq + BINAURAL_OFFSET;
+    });
+
+    voiceSpeedEl.addEventListener('input', () => {
+      var v = parseFloat(voiceSpeedEl.value);
+      voiceSpeedValueEl.textContent = (v >= 0 ? '+' : '') + v.toFixed(2);
     });
 
     // Initialize CodeMirror
@@ -186,7 +245,7 @@
     leadSecEl.value = DEFAULT_LEAD_MS / 1000;
 
     function effectiveRate() {
-      return DEFAULT_SPEED;
+      return DEFAULT_SPEED + parseFloat(voiceSpeedEl.value);
     }
 
 
@@ -206,11 +265,105 @@
     let isPaused = false;
     let pauseResumeTrigger = null;
     let pendingLiveGap = false;
+    var heldLineWidget = null;
+    var heldLineHandle = null;
     const bufferCache = new Map(); // text -> AudioBuffer
 
     function setStatus(msg) {
       statusEl.textContent = msg;
     }
+
+    function markHeldLine(handle) {
+      clearHeldLine();
+      var lineNum = cm.getLineNumber(handle);
+      if (lineNum === null) return;
+      cm.addLineClass(handle, 'background', 'held-line-bg');
+      cm.addLineClass(handle, 'text', 'held-line-text');
+      var el = document.createElement('span');
+      el.className = 'held-line-hint';
+      el.textContent = 'press Enter to queue this line';
+      heldLineWidget = cm.setBookmark({ line: lineNum, ch: handle.text.length }, { widget: el, insertLeft: true });
+      heldLineHandle = handle;
+    }
+
+    function clearHeldLine() {
+      if (heldLineWidget) {
+        heldLineWidget.clear();
+        heldLineWidget = null;
+      }
+      if (heldLineHandle) {
+        cm.removeLineClass(heldLineHandle, 'background', 'held-line-bg');
+        cm.removeLineClass(heldLineHandle, 'text', 'held-line-text');
+        heldLineHandle = null;
+      }
+    }
+
+    var pastLineMarks = [];
+
+    function markPastLine(handle) {
+      var lineNum = cm.getLineNumber(handle);
+      if (lineNum === null) return;
+      cm.addLineClass(handle, 'background', 'past-line-bg');
+      cm.addLineClass(handle, 'text', 'past-line-text');
+      var el = document.createElement('span');
+      el.className = 'past-line-hint';
+      el.textContent = 'before current position, won\'t be spoken';
+      var widget = cm.setBookmark({ line: lineNum, ch: handle.text.length }, { widget: el, insertLeft: true });
+      pastLineMarks.push({ handle: handle, widget: widget });
+    }
+
+    function clearPastLines() {
+      pastLineMarks.forEach(function(mark) {
+        if (mark.widget) mark.widget.clear();
+        if (mark.handle) {
+          cm.removeLineClass(mark.handle, 'background', 'past-line-bg');
+          cm.removeLineClass(mark.handle, 'text', 'past-line-text');
+        }
+      });
+      pastLineMarks = [];
+    }
+
+    function getActiveLineNum() {
+      var activeNum = null;
+      cm.eachLine(function(handle) {
+        var info = cm.lineInfo(handle);
+        if (info && info.bgClass && info.bgClass.indexOf('active-line-bg') !== -1) {
+          activeNum = cm.getLineNumber(handle);
+        }
+      });
+      return activeNum;
+    }
+
+    function updateHeldLine() {
+      var lastIndex = cm.lineCount() - 1;
+      var lastLine = cm.getLine(lastIndex);
+      var lastHandle = cm.getLineHandle(lastIndex);
+      if (lastLine && lastLine.trim().length > 0) {
+        if (heldLineHandle !== lastHandle) {
+          markHeldLine(lastHandle);
+        }
+      } else {
+        clearHeldLine();
+      }
+    }
+
+    cm.on('change', function(instance, changeObj) {
+      updateHeldLine();
+      if (!streaming) return;
+      var activeLineNum = getActiveLineNum();
+      if (activeLineNum === null) return;
+      var fromLine = changeObj.from.line;
+      var endLine = fromLine + changeObj.text.length - 1;
+      for (var i = fromLine; i <= endLine && i < activeLineNum; i++) {
+        var handle = cm.getLineHandle(i);
+        if (handle && cm.getLine(i).trim().length > 0) {
+          var alreadyMarked = pastLineMarks.some(function(m) { return m.handle === handle; });
+          if (!alreadyMarked) {
+            markPastLine(handle);
+          }
+        }
+      }
+    });
 
     function currentGapMs() {
       const sec = parseFloat(gapSecEl.value);
@@ -430,22 +583,25 @@
       return { mainEnd, echoEnd };
     }
 
+    var liveBeatOscL = null;
+    var liveBeatOscR = null;
+
     function startBinauralBeat(ctx, duration) {
-      const gain = ctx.createGain();
+      var gain = ctx.createGain();
       gain.gain.setValueAtTime(0, ctx.currentTime);
       gain.gain.linearRampToValueAtTime(BEAT_GAIN, ctx.currentTime + 0.25);
       gain.gain.setValueAtTime(BEAT_GAIN, ctx.currentTime + duration - 0.25);
       gain.gain.linearRampToValueAtTime(0, ctx.currentTime + duration);
 
-      const bassFreq = currentBassFreq();
-      const oscL = ctx.createOscillator();
+      var bassFreq = currentBassFreq();
+      var oscL = ctx.createOscillator();
       oscL.frequency.value = bassFreq;
-      const pannerL = ctx.createStereoPanner();
+      var pannerL = ctx.createStereoPanner();
       pannerL.pan.value = -1;
 
-      const oscR = ctx.createOscillator();
+      var oscR = ctx.createOscillator();
       oscR.frequency.value = bassFreq + BINAURAL_OFFSET;
-      const pannerR = ctx.createStereoPanner();
+      var pannerR = ctx.createStereoPanner();
       pannerR.pan.value = 1;
 
       oscL.connect(pannerL).connect(gain).connect(ctx.destination);
@@ -455,6 +611,9 @@
       oscL.stop(ctx.currentTime + duration);
       oscR.stop(ctx.currentTime + duration);
       beatNodes.push(oscL, oscR, gain, pannerL, pannerR);
+
+      liveBeatOscL = oscL;
+      liveBeatOscR = oscR;
     }
 
     function stopPlayback() {
@@ -478,6 +637,8 @@
         } catch (_) { }
       });
       beatNodes = [];
+      liveBeatOscL = null;
+      liveBeatOscR = null;
       if (playbackContext) {
         try {
           playbackContext.suspend();
@@ -496,6 +657,8 @@
       }
 
       // Clear CodeMirror highlights
+      clearHeldLine();
+      clearPastLines();
       cm.eachLine((handle) => {
         cm.removeLineClass(handle, 'background', 'active-line-bg');
         cm.removeLineClass(handle, 'text', 'active-line-text');
@@ -541,7 +704,6 @@
 
       const leadMs = currentLeadMs();
       const leadSec = leadMs / 1000;
-      const rate = effectiveRate();
 
       let cursor = playbackContext.currentTime + leadSec;
       let maxEchoEnd = cursor;
@@ -596,14 +758,21 @@
           // It only becomes eligible once there's a newline after it.
           if (currentHandle) {
             const lineNum = cm.getLineNumber(currentHandle);
-            const lastLineIndex = cm.lineCount() - 1;
-            if (lineNum === lastLineIndex) {
-              lastHandle = currentHandle;
-              if (!pendingLiveGap) {
-                pendingLiveGap = true;
+            if (lineNum === null) {
+              currentHandle = null;
+            } else {
+              const lastLineIndex = cm.lineCount() - 1;
+              if (lineNum === lastLineIndex) {
+                lastHandle = currentHandle;
+                if (!pendingLiveGap) {
+                  pendingLiveGap = true;
+                }
+                if (heldLineHandle !== currentHandle) {
+                  markHeldLine(currentHandle);
+                }
+                await new Promise(r => setTimeout(r, 100));
+                continue;
               }
-              await new Promise(r => setTimeout(r, 100));
-              continue;
             }
           }
 
@@ -638,6 +807,8 @@
               continue;
             }
           }
+
+          clearHeldLine();
 
           // Parse the current element's text
           const currentText = currentHandle.text;
@@ -689,10 +860,11 @@
             const startTime = Math.max(cursor + gap, playbackContext.currentTime);
             const phaseMs = pickPhaseMs();
 
+            var liveRate = effectiveRate();
             const repeatInfo = repeatCount > 1 ? ` (${r + 1}/${repeatCount})` : '';
-            setStatus(`Line: "${text}"${repeatInfo} | speed=${rate.toFixed(2)}x | phase=${phaseMs}ms`);
+            setStatus(`Line: "${text}"${repeatInfo} | speed=${liveRate.toFixed(2)}x | phase=${phaseMs}ms`);
 
-            let { mainEnd, echoEnd } = scheduleEchoPass(playbackContext, buffer, startTime, rate, true, phaseMs);
+            let { mainEnd, echoEnd } = scheduleEchoPass(playbackContext, buffer, startTime, liveRate, true, phaseMs);
 
             cursor = mainEnd;
             maxEchoEnd = Math.max(maxEchoEnd, echoEnd);
@@ -766,10 +938,16 @@
               nextHandle = cm.getLineHandle(highlightedLineNum + 1);
             }
           } else {
-            lastHandle = currentHandle;
-            const lineNum = currentHandle ? cm.getLineNumber(currentHandle) : null;
-            if (lineNum !== null && lineNum + 1 < cm.lineCount()) {
-              nextHandle = cm.getLineHandle(lineNum + 1);
+            var fallbackNum = currentHandle ? cm.getLineNumber(currentHandle) : null;
+            if (fallbackNum === null && lastHandle) {
+              fallbackNum = cm.getLineNumber(lastHandle);
+            }
+            if (fallbackNum !== null && fallbackNum + 1 < cm.lineCount()) {
+              nextHandle = cm.getLineHandle(fallbackNum + 1);
+              lastHandle = cm.getLineHandle(fallbackNum);
+            } else if (cm.lineCount() > 0) {
+              nextHandle = cm.getLineHandle(0);
+              lastHandle = null;
             }
           }
 
