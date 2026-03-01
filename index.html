@@ -72,6 +72,34 @@
       pointer-events: none;
       user-select: none;
     }
+
+    .skipped-line-bg {
+      background-color: #1a0a00 !important;
+    }
+
+    .skipped-line-text {
+      color: #ff9900 !important;
+    }
+
+    .skipped-line-hint {
+      color: #ff9900;
+      opacity: 0.6;
+      font-style: italic;
+      font-size: 0.8em;
+      margin-left: 1em;
+      pointer-events: none;
+      user-select: none;
+    }
+
+    .block-warning-hint {
+      color: #ff9900;
+      opacity: 0.8;
+      font-style: italic;
+      font-size: 0.8em;
+      margin-left: 1em;
+      pointer-events: none;
+      user-select: none;
+    }
   </style>
 
 <body>
@@ -151,8 +179,22 @@
           execution. Example:<span class="note-example"><code>[3] Obedience is pleasure</code></span></li>
         <li><strong>Repetition cycles:</strong> Use <code>[x3]</code> to loop a command 3 times for reinforcement.</li>
         <li><strong>Combined directives:</strong> Chain delay and repetition tags to script more complex responses.
-          Example:<span class="note-example"><code>[2][x5] Unit complies</code></span><span class="note-example">Speaks
+          Example:<span class=”note-example”><code>[2][x5] Unit complies</code></span><span class=”note-example”>Speaks
             “Unit complies” five times with a 2-second pause between each repetition.</span></li>
+        <li><strong>Block definition:</strong> Wrap lines in <code>[BLOCK:name]</code> and <code>[/BLOCK:name]</code> to
+          create a repeatable block. Add <code>[x3]</code> and delay tags on the opening line.
+          <span class=”note-example”><code>[BLOCK:mantra][x3][5]</code></span>
+          <span class=”note-example”><code>You are going deeper</code></span>
+          <span class=”note-example”><code>Relax and obey</code></span>
+          <span class=”note-example”><code>[/BLOCK:mantra]</code></span>
+          <span class=”note-example”>Speaks both lines 3 times with 5-second gaps between passes.</span></li>
+        <li><strong>Block replay:</strong> Reference a defined block later to replay it:
+          <span class=”note-example”><code>[BLOCK:mantra][x2]</code></span>
+          <span class=”note-example”>Replays the block's current contents twice.</span></li>
+        <li><strong>Silent definition:</strong> Use <code>[x0]</code> to define a block without playing it:
+          <span class=”note-example”><code>[BLOCK:intro][x0]</code></span>
+          <span class=”note-example”>The block is defined but won't play until referenced.</span></li>
+        <li><strong>Nesting:</strong> Blocks can be nested up to 3 levels deep. Deeper nesting is flagged in the editor.</li>
       </ul>
       <p>Execute the example protocol to test system response.</p>
     </div>
@@ -239,6 +281,7 @@
     const BEAT_GAIN = 0.3;
     const STEREO_PAN = 0.2; // pan offset per side when widening
     const DEFAULT_PHASE_MS = 50;
+    const MAX_BLOCK_DEPTH = 3;
 
     // Initialize defaults
     gapSecEl.value = DEFAULT_GAP_MS / 1000;
@@ -262,6 +305,8 @@
     let rendering = false;
     let abortRender = false;
     let streaming = false;
+    var playCursor = 0;
+    var playingBlocks = {};
     let isPaused = false;
     let pauseResumeTrigger = null;
     let pendingLiveGap = false;
@@ -277,6 +322,7 @@
       clearHeldLine();
       var lineNum = cm.getLineNumber(handle);
       if (lineNum === null) return;
+      if (!handle.text || !handle.text.trim()) return;
       cm.addLineClass(handle, 'background', 'held-line-bg');
       cm.addLineClass(handle, 'text', 'held-line-text');
       var el = document.createElement('span');
@@ -323,6 +369,31 @@
       pastLineMarks = [];
     }
 
+    var skippedLineMarks = [];
+
+    function markSkippedLine(handle, blockName, reason) {
+      var lineNum = cm.getLineNumber(handle);
+      if (lineNum === null) return;
+      cm.addLineClass(handle, 'background', 'skipped-line-bg');
+      cm.addLineClass(handle, 'text', 'skipped-line-text');
+      var el = document.createElement('span');
+      el.className = 'skipped-line-hint';
+      el.textContent = 'skipped - ' + (reason || '[BLOCK:' + blockName + '] is not closed');
+      var widget = cm.setBookmark({ line: lineNum, ch: handle.text.length }, { widget: el, insertLeft: true });
+      skippedLineMarks.push({ handle: handle, widget: widget });
+    }
+
+    function clearSkippedLines() {
+      skippedLineMarks.forEach(function(mark) {
+        if (mark.widget) mark.widget.clear();
+        if (mark.handle) {
+          cm.removeLineClass(mark.handle, 'background', 'skipped-line-bg');
+          cm.removeLineClass(mark.handle, 'text', 'skipped-line-text');
+        }
+      });
+      skippedLineMarks = [];
+    }
+
     function getActiveLineNum() {
       var activeNum = null;
       cm.eachLine(function(handle) {
@@ -332,6 +403,116 @@
         }
       });
       return activeNum;
+    }
+
+    var blockWarningMarks = [];
+
+    function clearBlockWarnings() {
+      blockWarningMarks.forEach(function(mark) {
+        if (mark.widget) mark.widget.clear();
+      });
+      blockWarningMarks = [];
+    }
+
+    function validateBlocks() {
+      clearBlockWarnings();
+
+      var lines = [];
+      cm.eachLine(function(handle) {
+        var lineNum = cm.getLineNumber(handle);
+        var parsed = parseTokens(handle.text, 0);
+        lines.push({ handle: handle, lineNum: lineNum, parsed: parsed });
+      });
+
+      // Pre-pass: identify all block names that have valid open/close pairs
+      var definedNames = {};
+      var tempStack = [];
+      for (var p = 0; p < lines.length; p++) {
+        if (!lines[p].parsed) continue;
+        if (lines[p].parsed.blockOpen) {
+          tempStack.push(lines[p].parsed.blockOpen.name);
+        }
+        if (lines[p].parsed.blockClose) {
+          var cn = lines[p].parsed.blockClose.name;
+          var ti = tempStack.lastIndexOf(cn);
+          if (ti !== -1) {
+            definedNames[cn] = true;
+            tempStack.splice(ti, 1);
+          }
+        }
+      }
+
+      // Main pass: validate structure
+      var stack = [];
+      var warnings = [];
+
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        if (!line.parsed) continue;
+
+        if (line.parsed.blockClose) {
+          var closeName = line.parsed.blockClose.name;
+          var foundIdx = -1;
+          for (var j = stack.length - 1; j >= 0; j--) {
+            if (stack[j].name === closeName) {
+              foundIdx = j;
+              break;
+            }
+          }
+          if (foundIdx === -1) {
+            warnings.push({
+              handle: line.handle,
+              lineNum: line.lineNum,
+              message: '[/' + closeName + '] has no matching open'
+            });
+          } else {
+            stack.splice(foundIdx, 1);
+          }
+        }
+
+        if (line.parsed.blockOpen) {
+          var openName = line.parsed.blockOpen.name;
+          var hasClose = false;
+          var depth = 0;
+          for (var k = i + 1; k < lines.length; k++) {
+            if (!lines[k].parsed) continue;
+            if (lines[k].parsed.blockOpen && lines[k].parsed.blockOpen.name === openName) depth++;
+            if (lines[k].parsed.blockClose && lines[k].parsed.blockClose.name === openName) {
+              if (depth === 0) { hasClose = true; break; }
+              depth--;
+            }
+          }
+
+          if (hasClose) {
+            if (stack.length >= MAX_BLOCK_DEPTH) {
+              warnings.push({
+                handle: line.handle,
+                lineNum: line.lineNum,
+                message: 'block nested too deep (max ' + MAX_BLOCK_DEPTH + ' levels)'
+              });
+            }
+            stack.push({ name: openName, handle: line.handle, lineNum: line.lineNum });
+          } else if (!definedNames[openName]) {
+            warnings.push({
+              handle: line.handle,
+              lineNum: line.lineNum,
+              message: '[BLOCK:' + openName + '] is never closed'
+            });
+          }
+        }
+      }
+
+      // Render warnings
+      warnings.forEach(function(w) {
+        var el = document.createElement('span');
+        el.className = 'block-warning-hint';
+        el.textContent = w.message;
+        var widget = cm.setBookmark(
+          { line: w.lineNum, ch: w.handle.text.length },
+          { widget: el, insertLeft: true }
+        );
+        blockWarningMarks.push({ widget: widget });
+      });
     }
 
     function updateHeldLine() {
@@ -349,6 +530,7 @@
 
     cm.on('change', function(instance, changeObj) {
       updateHeldLine();
+      validateBlocks();
       if (!streaming) return;
       var activeLineNum = getActiveLineNum();
       if (activeLineNum === null) return;
@@ -392,58 +574,122 @@
       return sec * 1000;
     }
 
+    function findMatchingClose(name, afterLineNum) {
+      var depth = 0;
+      for (var i = afterLineNum + 1; i < cm.lineCount(); i++) {
+        var handle = cm.getLineHandle(i);
+        if (!handle) continue;
+        var parsed = parseTokens(handle.text, 0);
+        if (!parsed) continue;
+        if (parsed.blockOpen && parsed.blockOpen.name === name) depth++;
+        if (parsed.blockClose && parsed.blockClose.name === name) {
+          if (depth === 0) return i;
+          depth--;
+        }
+      }
+      return -1;
+    }
+
+    function findBlockDefinition(name) {
+      for (var i = 0; i < cm.lineCount(); i++) {
+        var handle = cm.getLineHandle(i);
+        if (!handle) continue;
+        var parsed = parseTokens(handle.text, 0);
+        if (!parsed || !parsed.blockOpen) continue;
+        if (parsed.blockOpen.name !== name) continue;
+        var closeNum = findMatchingClose(name, i);
+        if (closeNum !== -1) {
+          return { openHandle: cm.getLineHandle(i), closeHandle: cm.getLineHandle(closeNum) };
+        }
+      }
+      return null;
+    }
+
     function parseLines() {
-      const result = [];
-      const defaultGap = currentGapMs();
+      var result = [];
+      var defaultGap = currentGapMs();
+      var lastLineIndex = cm.lineCount() - 1;
 
-      const lastLineIndex = cm.lineCount() - 1;
-      cm.eachLine((handle) => {
-        const lineNum = cm.getLineNumber(handle);
-        // Do not process the very last line in the document.
-        // It only becomes eligible once there's a newline after it.
-        if (lineNum === lastLineIndex) return;
+      function expandRange(startLine, endLine, depth, visited) {
+        visited = visited || {};
+        for (var i = startLine; i <= endLine; i++) {
+          if (i === lastLineIndex) continue;
+          var handle = cm.getLineHandle(i);
+          if (!handle) continue;
+          var parsed = parseTokens(handle.text, defaultGap);
+          if (!parsed) continue;
 
-        const rawText = handle.text;
-        const trimmed = rawText.trim();
-        if (!trimmed) return;
-        const noComment = trimmed.split('#')[0].trim();
-        if (!noComment) return;
+          if (parsed.blockClose) continue;
 
-        let rest = noComment;
-        let repeatCount = 1;
-        let gapBeforeMs = defaultGap;
+          if (parsed.blockOpen) {
+            var closeNum = findMatchingClose(parsed.blockOpen.name, i);
 
-        // consume leading directives [xN] and/or [N]; gap applies before this line and between its repeats
-        // allow multiple directives chained
-        // eslint-disable-next-line no-constant-condition
-        while (true) {
-          const m = rest.match(/^\[([^\]]+)\]\s*(.*)$/);
-          if (!m) break;
-          const token = m[1];
-          rest = (m[2] || '').trim();
-          const rep = token.match(/^x(\d+)$/i);
-          if (rep) {
-            repeatCount = Math.max(1, parseInt(rep[1], 10));
+            if (closeNum !== -1 && closeNum <= endLine) {
+              if (depth >= MAX_BLOCK_DEPTH) {
+                expandRange(i + 1, closeNum - 1, depth, visited);
+                i = closeNum;
+                continue;
+              }
+
+              var blockRepeat = parsed.repeatCount;
+              if (blockRepeat === 0) {
+                i = closeNum;
+                continue;
+              }
+
+              var blockKey = i + ':' + closeNum;
+              if (visited[blockKey]) { i = closeNum; continue; }
+              visited[blockKey] = true;
+
+              for (var pass = 0; pass < blockRepeat; pass++) {
+                expandRange(i + 1, closeNum - 1, depth + 1, visited);
+              }
+              delete visited[blockKey];
+              i = closeNum;
+              continue;
+            }
+
+            var def = findBlockDefinition(parsed.blockOpen.name);
+            if (def) {
+              var refRepeat = parsed.repeatCount || 1;
+              var defOpenNum = cm.getLineNumber(def.openHandle);
+              var defCloseNum = cm.getLineNumber(def.closeHandle);
+              if (defOpenNum !== null && defCloseNum !== null) {
+                var refKey = defOpenNum + ':' + defCloseNum;
+                if (!visited[refKey]) {
+                  visited[refKey] = true;
+                  for (var rp = 0; rp < refRepeat; rp++) {
+                    expandRange(defOpenNum + 1, defCloseNum - 1, depth + 1, visited);
+                  }
+                  delete visited[refKey];
+                }
+              }
+              continue;
+            }
+
+            if (parsed.text) {
+              result.push({
+                text: parsed.text,
+                repeatCount: parsed.repeatCount || 1,
+                repeatGapMs: parsed.gapBeforeMs,
+                gapBeforeMs: parsed.gapBeforeMs
+              });
+            }
             continue;
           }
-          const gap = parseFloat(token);
-          if (Number.isFinite(gap)) {
-            gapBeforeMs = gap * 1000;
-            continue;
+
+          if (parsed.text) {
+            result.push({
+              text: parsed.text,
+              repeatCount: parsed.repeatCount,
+              repeatGapMs: parsed.repeatGapMs,
+              gapBeforeMs: parsed.gapBeforeMs
+            });
           }
         }
+      }
 
-        const text = rest.trim();
-        if (!text) return;
-
-        result.push({
-          text,
-          repeatCount,
-          repeatGapMs: gapBeforeMs,
-          gapBeforeMs,
-        });
-      });
-
+      expandRange(0, lastLineIndex, 0, {});
       return result;
     }
 
@@ -456,44 +702,69 @@
         .replace(/'/g, '&#39;');
     }
 
-    function parseSingleLine(rawText) {
+    function parseTokens(rawText, defaultGapMs) {
       if (!rawText) return null;
-      const trimmed = rawText.trim();
+      var trimmed = rawText.trim();
       if (!trimmed) return null;
-      const noComment = trimmed.split('#')[0].trim();
+      var noComment = trimmed.split('#')[0].trim();
       if (!noComment) return null;
 
-      let rest = noComment;
-      let repeatCount = 1;
-      let gapBeforeMs = currentGapMs();
+      var rest = noComment;
+      var repeatCount = 1;
+      var gapBeforeMs = defaultGapMs;
+      var blockOpen = null;
+      var blockClose = null;
 
-      // eslint-disable-next-line no-constant-condition
       while (true) {
-        const m = rest.match(/^\[([^\]]+)\]\s*(.*)$/);
+        var m = rest.match(/^\[([^\]]+)\]\s*(.*)$/);
         if (!m) break;
-        const token = m[1];
+        var token = m[1];
         rest = (m[2] || '').trim();
-        const rep = token.match(/^x(\d+)$/i);
+
+        var rep = token.match(/^x(\d+)$/i);
         if (rep) {
-          repeatCount = Math.max(1, parseInt(rep[1], 10));
+          repeatCount = Math.max(0, parseInt(rep[1], 10));
           continue;
         }
-        const gap = parseFloat(token);
-        if (Number.isFinite(gap)) {
-          gapBeforeMs = gap * 1000;
+
+        var blockOpenMatch = token.match(/^BLOCK:(\w+)$/i);
+        if (blockOpenMatch) {
+          blockOpen = { name: blockOpenMatch[1].toUpperCase() };
           continue;
+        }
+
+        var blockCloseMatch = token.match(/^\/BLOCK:(\w+)$/i);
+        if (blockCloseMatch) {
+          blockClose = { name: blockCloseMatch[1].toUpperCase() };
+          continue;
+        }
+
+        if (token.match(/^\d+(\.\d+)?$/)) {
+          var gap = parseFloat(token);
+          if (Number.isFinite(gap)) {
+            gapBeforeMs = gap * 1000;
+            continue;
+          }
         }
       }
 
-      const text = rest.trim();
-      if (!text) return null;
+      var text = rest.trim() || null;
 
       return {
-        text,
-        repeatCount,
+        text: text,
+        repeatCount: repeatCount,
         repeatGapMs: gapBeforeMs,
-        gapBeforeMs,
+        gapBeforeMs: gapBeforeMs,
+        blockOpen: blockOpen,
+        blockClose: blockClose
       };
+    }
+
+    function parseSingleLine(rawText) {
+      var result = parseTokens(rawText, currentGapMs());
+      if (!result) return null;
+      if (!result.text && !result.blockOpen && !result.blockClose) return null;
+      return result;
     }
 
     async function synthesizeLineToBuffer(text) {
@@ -659,16 +930,194 @@
       // Clear CodeMirror highlights
       clearHeldLine();
       clearPastLines();
+      clearSkippedLines();
+      clearBlockWarnings();
       cm.eachLine((handle) => {
         cm.removeLineClass(handle, 'background', 'active-line-bg');
         cm.removeLineClass(handle, 'text', 'active-line-text');
       });
 
+      validateBlocks();
       setStatus('Stopped.');
     }
 
+    async function playParsedLine(parsed, handle, isFirstLine) {
+      if (!streaming || !parsed.text) return;
+
+      setStatus('Synthesising line...');
+      var buffer = await synthesizeLineToBuffer(parsed.text);
+      if (!streaming) return;
+
+      var repeatCount = parsed.repeatCount || 1;
+      for (var r = 0; r < repeatCount; r++) {
+        if (!streaming) return;
+
+        if (isPaused) {
+          if (playbackEndTimer) { clearTimeout(playbackEndTimer); playbackEndTimer = null; }
+          setStatus('Paused (Background audio playing)...');
+          await new Promise(function(resolve) { pauseResumeTrigger = resolve; });
+          if (!streaming) return;
+          setStatus('Resuming...');
+        }
+
+        var gap = (isFirstLine && r === 0) ? 0 : (r === 0 ? parsed.gapBeforeMs / 1000 : parsed.repeatGapMs / 1000);
+        var startTime = Math.max(playCursor + gap, playbackContext.currentTime);
+        var phaseMs = pickPhaseMs();
+        var liveRate = effectiveRate();
+        var repeatInfo = repeatCount > 1 ? ' (' + (r + 1) + '/' + repeatCount + ')' : '';
+
+        setStatus('Line: "' + parsed.text + '"' + repeatInfo + ' | speed=' + liveRate.toFixed(2) + 'x | phase=' + phaseMs + 'ms');
+
+        var result = scheduleEchoPass(playbackContext, buffer, startTime, liveRate, true, phaseMs);
+        playCursor = result.mainEnd;
+
+        var lineDelayMs = Math.max(0, (startTime - playbackContext.currentTime) * 1000);
+
+        if (r === 0) {
+          var handleToHighlight = handle;
+          var statusText = 'Playing: "' + parsed.text + '"' + repeatInfo;
+          var statusTimer = setTimeout(function(h, s) {
+            return function() {
+              if (!streaming) return;
+              cm.eachLine(function(lh) {
+                cm.removeLineClass(lh, 'background', 'active-line-bg');
+                cm.removeLineClass(lh, 'text', 'active-line-text');
+              });
+              cm.addLineClass(h, 'background', 'active-line-bg');
+              cm.addLineClass(h, 'text', 'active-line-text');
+              cm.scrollIntoView(h, 200);
+              setStatus(s);
+            };
+          }(handleToHighlight, statusText), lineDelayMs);
+          lineStatusTimers.push(statusTimer);
+        } else {
+          var rpStatusText = 'Playing: "' + parsed.text + '"' + repeatInfo;
+          var rpTimer = setTimeout(function(s) {
+            return function() { if (streaming) setStatus(s); };
+          }(rpStatusText), lineDelayMs);
+          lineStatusTimers.push(rpTimer);
+        }
+
+        if (isFirstLine && r === 0 && lineDelayMs > 50) {
+          setStatus('Waiting for lead-in (' + (lineDelayMs / 1000).toFixed(1) + 's)...');
+        }
+
+        var duration = result.mainEnd - startTime;
+        var waitMs = Math.max(0, (startTime + duration - 0.25 - playbackContext.currentTime) * 1000);
+        if (waitMs > 0) {
+          await new Promise(function(resolve) { setTimeout(resolve, waitMs); });
+          if (!streaming) return;
+        }
+      }
+    }
+
+    async function playBlockContents(openHandle, closeHandle, totalRepeats, gapBetweenMs, depth) {
+      var blockKey = null;
+
+      for (var pass = 0; pass < totalRepeats; pass++) {
+        if (!streaming) return;
+
+        var openNum = cm.getLineNumber(openHandle);
+        var closeNum = cm.getLineNumber(closeHandle);
+        if (openNum === null || closeNum === null) return;
+
+        blockKey = openNum + ':' + closeNum;
+        if (playingBlocks[blockKey]) return;
+        playingBlocks[blockKey] = true;
+
+        if (pass > 0 && gapBetweenMs > 0) {
+          setStatus('Block repeat ' + (pass + 1) + '/' + totalRepeats + ' (waiting ' + (gapBetweenMs / 1000).toFixed(1) + 's)...');
+          await new Promise(function(r) { setTimeout(r, gapBetweenMs); });
+          if (!streaming) { delete playingBlocks[blockKey]; return; }
+        }
+
+        if (pass > 0) clearPastLines();
+
+        var firstLineInPass = true;
+        for (var lineNum = openNum + 1; lineNum < closeNum; lineNum++) {
+          if (!streaming) { delete playingBlocks[blockKey]; return; }
+
+          if (isPaused) {
+            setStatus('Paused (Background audio playing)...');
+            await new Promise(function(resolve) { pauseResumeTrigger = resolve; });
+            if (!streaming) { delete playingBlocks[blockKey]; return; }
+            setStatus('Resuming...');
+          }
+
+          // Re-resolve close in case of edits
+          closeNum = cm.getLineNumber(closeHandle);
+          if (closeNum === null) { delete playingBlocks[blockKey]; return; }
+
+          var handle = cm.getLineHandle(lineNum);
+          if (!handle) continue;
+
+          var parsed = parseTokens(handle.text, currentGapMs());
+          if (!parsed) continue;
+
+          if (parsed.blockClose) continue;
+
+          if (parsed.blockOpen) {
+            var nestedCloseNum = findMatchingClose(parsed.blockOpen.name, lineNum);
+
+            if (nestedCloseNum !== -1 && nestedCloseNum < closeNum) {
+              if (depth >= MAX_BLOCK_DEPTH) {
+                if (parsed.text) { await playParsedLine(parsed, handle, firstLineInPass); firstLineInPass = false; }
+                continue;
+              }
+
+              var nestedRepeat = parsed.repeatCount;
+              if (nestedRepeat === 0) {
+                lineNum = nestedCloseNum;
+                continue;
+              }
+
+              var nestedOpenHandle = handle;
+              var nestedCloseHandle = cm.getLineHandle(nestedCloseNum);
+              await playBlockContents(nestedOpenHandle, nestedCloseHandle, nestedRepeat, parsed.gapBeforeMs, depth + 1);
+              firstLineInPass = false;
+              lineNum = cm.getLineNumber(nestedCloseHandle);
+              if (lineNum === null) { delete playingBlocks[blockKey]; return; }
+              continue;
+            }
+
+            // Block reference
+            if (depth >= MAX_BLOCK_DEPTH) {
+              setStatus('Skipping [BLOCK:' + parsed.blockOpen.name + '] - max depth reached');
+              markSkippedLine(handle, parsed.blockOpen.name, 'max block depth reached');
+              if (parsed.text) { await playParsedLine(parsed, handle, firstLineInPass); firstLineInPass = false; }
+              continue;
+            }
+
+            var def = findBlockDefinition(parsed.blockOpen.name);
+            if (def) {
+              var refRepeat = parsed.repeatCount || 1;
+              if (refRepeat > 0) {
+                await playBlockContents(def.openHandle, def.closeHandle, refRepeat, parsed.gapBeforeMs, depth + 1);
+                firstLineInPass = false;
+              }
+              if (!streaming) { delete playingBlocks[blockKey]; return; }
+              continue;
+            }
+
+            // Undefined/unclosed block reference, skip and highlight
+            setStatus('Skipping [BLOCK:' + parsed.blockOpen.name + '] - not closed');
+            markSkippedLine(handle, parsed.blockOpen.name);
+            if (parsed.text) { await playParsedLine(parsed, handle, firstLineInPass); firstLineInPass = false; }
+            continue;
+          }
+
+          if (parsed.text) {
+            await playParsedLine(parsed, handle, firstLineInPass);
+            firstLineInPass = false;
+          }
+        }
+
+        delete playingBlocks[blockKey];
+      }
+    }
+
     async function streamPlayback(maxLines = Infinity) {
-      let currentHandle = cm.getLineHandle(0);
+      var currentHandle = cm.getLineHandle(0);
       if (!currentHandle) {
         setStatus('Enter some text first.');
         return;
@@ -678,7 +1127,7 @@
         stopPlayback();
       }
 
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      var AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) {
         setStatus('Web Audio API not supported in this browser.');
         return;
@@ -691,134 +1140,102 @@
         }
       }
       if (playbackContext.state === 'suspended') {
-        try {
-          playbackContext.resume();
-        } catch (_) { }
+        try { playbackContext.resume(); } catch (_) { }
       }
 
       streaming = true;
+      playingBlocks = {};
+      clearBlockWarnings();
       startBtn.disabled = true;
       stopBtn.disabled = false;
       pauseBtn.disabled = false;
       setStatus('Preparing audio...');
 
-      const leadMs = currentLeadMs();
-      const leadSec = leadMs / 1000;
+      var leadMs = currentLeadMs();
+      var leadSec = leadMs / 1000;
 
-      let cursor = playbackContext.currentTime + leadSec;
-      let maxEchoEnd = cursor;
+      playCursor = playbackContext.currentTime + leadSec;
 
-      // Start binaural beat immediately when playback begins
       startBinauralBeat(playbackContext, 3600);
 
-      let linesPlayed = 0;
-      let lastHandle = null;
+      var linesPlayed = 0;
+      var lastHandle = null;
 
       try {
         while (streaming && linesPlayed < maxLines) {
-          // Check for pause FIRST, before doing anything else
+          // Pause check
           if (isPaused) {
-            if (playbackEndTimer) {
-              clearTimeout(playbackEndTimer);
-              playbackEndTimer = null;
-            }
+            if (playbackEndTimer) { clearTimeout(playbackEndTimer); playbackEndTimer = null; }
             setStatus('Paused (Background audio playing)...');
-            await new Promise(resolve => { pauseResumeTrigger = resolve; });
+            await new Promise(function(resolve) { pauseResumeTrigger = resolve; });
             if (!streaming) break;
             setStatus('Resuming...');
 
-            // After resume: Find the HIGHLIGHTED line and calculate what comes after it.
-            // This is the source of truth, whether we paused during main voice or echoes.
-            let highlightedHandle = null;
-            cm.eachLine((handle) => {
-              const info = cm.lineInfo(handle);
-              if (info && info.bgClass && info.bgClass.includes('active-line-bg')) {
+            var highlightedHandle = null;
+            cm.eachLine(function(handle) {
+              var info = cm.lineInfo(handle);
+              if (info && info.bgClass && info.bgClass.indexOf('active-line-bg') !== -1) {
                 highlightedHandle = handle;
               }
             });
 
             if (highlightedHandle) {
-              // Update lastHandle to be the highlighted line
               lastHandle = highlightedHandle;
-              const highlightedLineNum = cm.getLineNumber(highlightedHandle);
-
-              // Calculate what comes after the highlighted line NOW
+              var highlightedLineNum = cm.getLineNumber(highlightedHandle);
               if (highlightedLineNum !== null && highlightedLineNum + 1 < cm.lineCount()) {
                 currentHandle = cm.getLineHandle(highlightedLineNum + 1);
               } else {
                 currentHandle = null;
               }
-              if (playbackEndTimer) {
-                clearTimeout(playbackEndTimer);
-                playbackEndTimer = null;
-              }
+              if (playbackEndTimer) { clearTimeout(playbackEndTimer); playbackEndTimer = null; }
             }
-          }// Idle / Waiting Logic
-          // If we're sitting on the final line in the editor, don't play it yet.
-          // It only becomes eligible once there's a newline after it.
+          }
+
+          // Held-line / idle logic
           if (currentHandle) {
-            const lineNum = cm.getLineNumber(currentHandle);
+            var lineNum = cm.getLineNumber(currentHandle);
             if (lineNum === null) {
               currentHandle = null;
             } else {
-              const lastLineIndex = cm.lineCount() - 1;
+              var lastLineIndex = cm.lineCount() - 1;
               if (lineNum === lastLineIndex) {
                 lastHandle = currentHandle;
-                if (!pendingLiveGap) {
-                  pendingLiveGap = true;
-                }
-                if (heldLineHandle !== currentHandle) {
-                  markHeldLine(currentHandle);
-                }
-                await new Promise(r => setTimeout(r, 100));
+                if (!pendingLiveGap) pendingLiveGap = true;
+                if (heldLineHandle !== currentHandle) markHeldLine(currentHandle);
+                await new Promise(function(r) { setTimeout(r, 100); });
                 continue;
               }
             }
           }
 
           if (!currentHandle) {
-            // We ran out of lines. Check if a new one appeared after the last one.
             if (lastHandle) {
-              const lastLineNum = cm.getLineNumber(lastHandle);
+              var lastLineNum = cm.getLineNumber(lastHandle);
               if (lastLineNum !== null && lastLineNum + 1 < cm.lineCount()) {
                 currentHandle = cm.getLineHandle(lastLineNum + 1);
-                // Important: Clear the auto-stop timer because we found more work!
-                if (playbackEndTimer) {
-                  clearTimeout(playbackEndTimer);
-                  playbackEndTimer = null;
-                }
-                // Go back to the top of the loop; on the next iteration,
-                // this newly discovered line will be parsed and scheduled.
+                if (playbackEndTimer) { clearTimeout(playbackEndTimer); playbackEndTimer = null; }
                 continue;
               } else {
-                // Still no line. Wait a bit and check again.
-                if (!pendingLiveGap) {
-                  pendingLiveGap = true;
-                }
-                await new Promise(r => setTimeout(r, 100));
+                if (!pendingLiveGap) pendingLiveGap = true;
+                await new Promise(function(r) { setTimeout(r, 100); });
                 continue;
               }
             } else {
-              // Should not happen if we started with a handle
-              if (!pendingLiveGap) {
-                pendingLiveGap = true;
-              }
-              await new Promise(r => setTimeout(r, 100));
+              if (!pendingLiveGap) pendingLiveGap = true;
+              await new Promise(function(r) { setTimeout(r, 100); });
               continue;
             }
           }
 
           clearHeldLine();
 
-          // Parse the current element's text
-          const currentText = currentHandle.text;
-          const parsed = parseSingleLine(currentText);
+          var parsed = parseSingleLine(currentHandle.text);
 
           if (!parsed) {
             lastHandle = currentHandle;
-            const lineNum = cm.getLineNumber(currentHandle);
-            if (lineNum !== null && lineNum + 1 < cm.lineCount()) {
-              currentHandle = cm.getLineHandle(lineNum + 1);
+            var ln = cm.getLineNumber(currentHandle);
+            if (ln !== null && ln + 1 < cm.lineCount()) {
+              currentHandle = cm.getLineHandle(ln + 1);
             } else {
               currentHandle = null;
             }
@@ -826,125 +1243,126 @@
           }
 
           if (pendingLiveGap) {
-            const waitMs = parsed.gapBeforeMs;
-            if (waitMs > 0) {
-              const seconds = (waitMs / 1000).toFixed(1);
-              setStatus(`Waiting for new line (${seconds}s)...`);
-              await new Promise((r) => setTimeout(r, waitMs));
+            if (parsed.gapBeforeMs > 0) {
+              setStatus('Waiting for new line (' + (parsed.gapBeforeMs / 1000).toFixed(1) + 's)...');
+              await new Promise(function(r) { setTimeout(r, parsed.gapBeforeMs); });
               if (!streaming) break;
             }
             pendingLiveGap = false;
           }
 
-          setStatus(`Synthesising line...`);
-          const buffer = await synthesizeLineToBuffer(parsed.text);
-          if (!streaming) break;
-
-          const { text, gapBeforeMs, repeatGapMs, repeatCount } = parsed;
-
-          // Iterate through repeats one by one
-          for (let r = 0; r < repeatCount; r++) {
-            // Pause check within repeats (but next-line logic is at top of main loop)
-            if (isPaused) {
-              if (playbackEndTimer) {
-                clearTimeout(playbackEndTimer);
-                playbackEndTimer = null;
-              }
-              setStatus('Paused (Background audio playing)...');
-              await new Promise(resolve => { pauseResumeTrigger = resolve; });
-              if (!streaming) break;
-              setStatus('Resuming...');
-            }
-
-            const gap = (linesPlayed === 0 && r === 0) ? 0 : (r === 0 ? gapBeforeMs / 1000 : repeatGapMs / 1000);
-            const startTime = Math.max(cursor + gap, playbackContext.currentTime);
-            const phaseMs = pickPhaseMs();
-
-            var liveRate = effectiveRate();
-            const repeatInfo = repeatCount > 1 ? ` (${r + 1}/${repeatCount})` : '';
-            setStatus(`Line: "${text}"${repeatInfo} | speed=${liveRate.toFixed(2)}x | phase=${phaseMs}ms`);
-
-            let { mainEnd, echoEnd } = scheduleEchoPass(playbackContext, buffer, startTime, liveRate, true, phaseMs);
-
-            cursor = mainEnd;
-            maxEchoEnd = Math.max(maxEchoEnd, echoEnd);
-
-            const lineDelayMs = Math.max(
-              0,
-              (startTime - playbackContext.currentTime) * 1000,
-            );
-
-            if (r === 0) {
-              const handleToHighlight = currentHandle;
-              const statusTimer = setTimeout(() => {
-                if (!streaming) return;
-
-                // Clear all highlights
-                cm.eachLine((h) => {
-                  cm.removeLineClass(h, 'background', 'active-line-bg');
-                  cm.removeLineClass(h, 'text', 'active-line-text');
-                });
-
-                cm.addLineClass(handleToHighlight, 'background', 'active-line-bg');
-                cm.addLineClass(handleToHighlight, 'text', 'active-line-text');
-                // Scroll into view
-                cm.scrollIntoView(handleToHighlight, 200);
-
-                setStatus(`Playing: "${text}"${repeatInfo}`);
-              }, lineDelayMs);
-              lineStatusTimers.push(statusTimer);
+          // Block close tags: skip
+          if (parsed.blockClose) {
+            lastHandle = currentHandle;
+            var bcLn = cm.getLineNumber(currentHandle);
+            if (bcLn !== null && bcLn + 1 < cm.lineCount()) {
+              currentHandle = cm.getLineHandle(bcLn + 1);
             } else {
-              const statusTimer = setTimeout(() => {
-                if (!streaming) return;
-                setStatus(`Playing: "${text}"${repeatInfo}`);
-              }, lineDelayMs);
-              lineStatusTimers.push(statusTimer);
+              currentHandle = null;
             }
-
-            if (linesPlayed === 0 && r === 0 && lineDelayMs > 50) {
-              const seconds = (lineDelayMs / 1000).toFixed(1);
-              setStatus(`Waiting for lead-in (${seconds}s)...`);
-            }
-
-            const duration = mainEnd - startTime;
-            const waitTime = startTime + duration - 0.25;
-            const waitMs = Math.max(0, (waitTime - playbackContext.currentTime) * 1000);
-
-            if (waitMs > 0) {
-              await new Promise((resolve) => setTimeout(resolve, waitMs));
-              if (!streaming) break;
-            }
+            continue;
           }
 
-          if (!streaming) break;
+          // Block open: definition or reference
+          if (parsed.blockOpen) {
+            var curLineNum = cm.getLineNumber(currentHandle);
+            var closeNum = findMatchingClose(parsed.blockOpen.name, curLineNum);
 
-          linesPlayed++;
+            if (closeNum !== -1) {
+              // Block definition
+              var blockRepeat = parsed.repeatCount;
+              if (blockRepeat === 0) {
+                // Silent definition, skip to after close
+                lastHandle = cm.getLineHandle(closeNum);
+                if (closeNum + 1 < cm.lineCount()) {
+                  currentHandle = cm.getLineHandle(closeNum + 1);
+                } else {
+                  currentHandle = null;
+                }
+                linesPlayed++;
+                continue;
+              }
 
-          // Decide what the NEXT line is based on the currently highlighted line.
-          // The highlighted line is the "source of truth" for where we are.
-          let highlightedHandle = null;
-          cm.eachLine((handle) => {
-            const info = cm.lineInfo(handle);
-            if (info && info.bgClass && info.bgClass.includes('active-line-bg')) {
-              highlightedHandle = handle;
+              var openHandle = currentHandle;
+              var closeHandle = cm.getLineHandle(closeNum);
+              await playBlockContents(openHandle, closeHandle, blockRepeat, parsed.gapBeforeMs, 0);
+              if (!streaming) break;
+
+              // Advance past the close tag
+              var afterClose = cm.getLineNumber(closeHandle);
+              if (afterClose !== null) {
+                lastHandle = closeHandle;
+                if (afterClose + 1 < cm.lineCount()) {
+                  currentHandle = cm.getLineHandle(afterClose + 1);
+                } else {
+                  currentHandle = null;
+                }
+              } else {
+                currentHandle = null;
+              }
+              linesPlayed++;
+              continue;
+            }
+
+            // No matching close: block reference
+            var def = findBlockDefinition(parsed.blockOpen.name);
+            if (def) {
+              var refRepeat = parsed.repeatCount || 1;
+              if (refRepeat > 0) {
+                await playBlockContents(def.openHandle, def.closeHandle, refRepeat, parsed.gapBeforeMs, 0);
+              }
+              if (!streaming) break;
+              lastHandle = currentHandle;
+              var refLn = cm.getLineNumber(currentHandle);
+              if (refLn !== null && refLn + 1 < cm.lineCount()) {
+                currentHandle = cm.getLineHandle(refLn + 1);
+              } else {
+                currentHandle = null;
+              }
+              linesPlayed++;
+              continue;
+            }
+
+            // Undefined/unclosed block, skip and highlight
+            setStatus('Skipping [BLOCK:' + parsed.blockOpen.name + '] - not closed');
+            markSkippedLine(currentHandle, parsed.blockOpen.name);
+            lastHandle = currentHandle;
+            var skipLn = cm.getLineNumber(currentHandle);
+            if (skipLn !== null && skipLn + 1 < cm.lineCount()) {
+              currentHandle = cm.getLineHandle(skipLn + 1);
+            } else {
+              currentHandle = null;
+            }
+            continue;
+          } else if (parsed.text) {
+            // Regular line
+            await playParsedLine(parsed, currentHandle, linesPlayed === 0);
+            if (!streaming) break;
+            linesPlayed++;
+          }
+
+          // Advance to next line
+          var nextHighlighted = null;
+          cm.eachLine(function(handle) {
+            var info = cm.lineInfo(handle);
+            if (info && info.bgClass && info.bgClass.indexOf('active-line-bg') !== -1) {
+              nextHighlighted = handle;
             }
           });
 
-          let nextHandle = null;
-          if (highlightedHandle) {
-            lastHandle = highlightedHandle;
-            const highlightedLineNum = cm.getLineNumber(highlightedHandle);
-            if (highlightedLineNum !== null && highlightedLineNum + 1 < cm.lineCount()) {
-              nextHandle = cm.getLineHandle(highlightedLineNum + 1);
+          var nextHandle = null;
+          if (nextHighlighted) {
+            lastHandle = nextHighlighted;
+            var nhLineNum = cm.getLineNumber(nextHighlighted);
+            if (nhLineNum !== null && nhLineNum + 1 < cm.lineCount()) {
+              nextHandle = cm.getLineHandle(nhLineNum + 1);
             }
           } else {
-            var fallbackNum = currentHandle ? cm.getLineNumber(currentHandle) : null;
-            if (fallbackNum === null && lastHandle) {
-              fallbackNum = cm.getLineNumber(lastHandle);
-            }
-            if (fallbackNum !== null && fallbackNum + 1 < cm.lineCount()) {
-              nextHandle = cm.getLineHandle(fallbackNum + 1);
-              lastHandle = cm.getLineHandle(fallbackNum);
+            var fb = currentHandle ? cm.getLineNumber(currentHandle) : null;
+            if (fb === null && lastHandle) fb = cm.getLineNumber(lastHandle);
+            if (fb !== null && fb + 1 < cm.lineCount()) {
+              nextHandle = cm.getLineHandle(fb + 1);
+              lastHandle = cm.getLineHandle(fb);
             } else if (cm.lineCount() > 0) {
               nextHandle = cm.getLineHandle(0);
               lastHandle = null;
@@ -954,7 +1372,7 @@
           currentHandle = nextHandle;
         }
       } finally {
-        // Cleanup if needed
+        playingBlocks = {};
       }
 
       if (streaming) {
