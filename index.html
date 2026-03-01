@@ -199,6 +199,26 @@
       <p>Execute the example protocol to test system response.</p>
     </div>
 
+    <details class="remote-control">
+      <summary>Remote Control Options</summary>
+      <p>This page listens on a BroadcastChannel named hypno-control. Any page on the same origin can send commands to control playback and settings. Open a browser console on another tab and send messages like:</p>
+      <p><code>new BroadcastChannel('hypno-control').postMessage({ action: 'start' })</code></p>
+      <p><code>new BroadcastChannel('hypno-control').postMessage({ action: 'setInterval', value: 5 })</code></p>
+      <div class="table-wrap">
+        <table>
+          <tr><th>Action</th><th>Value</th><th>Effect</th></tr>
+          <tr><td><code>start</code></td><td>-</td><td>Start playback</td></tr>
+          <tr><td><code>stop</code></td><td>-</td><td>Stop playback</td></tr>
+          <tr><td><code>pause</code></td><td>-</td><td>Toggle pause</td></tr>
+          <tr><td><code>setScript</code></td><td>string</td><td>Replace the editor content</td></tr>
+          <tr><td><code>setInterval</code></td><td>number (seconds)</td><td>Set the default interval</td></tr>
+          <tr><td><code>setCarrierSignal</code></td><td>number (seconds)</td><td>Set the carrier signal duration</td></tr>
+          <tr><td><code>setCarrierFrequency</code></td><td>number (Hz, 75-200)</td><td>Set the carrier frequency</td></tr>
+          <tr><td><code>setVoiceSpeed</code></td><td>number (-0.5 to 0.5)</td><td>Set the voice speed offset</td></tr>
+        </table>
+      </div>
+    </details>
+
     <footer>
       <p><strong>Credits:</strong></p>
       <ul>
@@ -267,6 +287,44 @@
       .catch(() => {
         // If loading fails, leave the editor empty and keep status as-is.
       });
+
+    // BroadcastChannel remote control
+    var remoteChannel = new BroadcastChannel('hypno-control');
+    remoteChannel.onmessage = function(e) {
+      var msg = e.data;
+      if (!msg || !msg.action) return;
+
+      switch (msg.action) {
+        case 'start':
+          startBtn.click();
+          break;
+        case 'stop':
+          stopBtn.click();
+          break;
+        case 'pause':
+          pauseBtn.click();
+          break;
+        case 'setScript':
+          if (typeof msg.value === 'string') cm.setValue(msg.value);
+          break;
+        case 'setInterval':
+          gapSecEl.value = msg.value;
+          gapSecEl.dispatchEvent(new Event('input'));
+          break;
+        case 'setCarrierSignal':
+          leadSecEl.value = msg.value;
+          leadSecEl.dispatchEvent(new Event('input'));
+          break;
+        case 'setCarrierFrequency':
+          bassFreqEl.value = msg.value;
+          bassFreqEl.dispatchEvent(new Event('input'));
+          break;
+        case 'setVoiceSpeed':
+          voiceSpeedEl.value = msg.value;
+          voiceSpeedEl.dispatchEvent(new Event('input'));
+          break;
+      }
+    };
 
     // Defaults and tuning
     const DEFAULT_SPEED = 0.78;
