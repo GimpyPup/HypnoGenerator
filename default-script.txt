@@ -7,4 +7,12 @@ You are a rubber object
 [2][x2] This line will repeat twice with a 2 second gap between repeats
 [5] This line will speak 5 seconds after the previous line
 
+[BLOCK:Example][x0]
+#this block has the [x0] setting so will not be read until it is referenced
+This is the example block
+[/BLOCK:Example]
+
+Now the block will play when we reference it
+[BLOCK:Example][x2] # This will play the example block twice
+
 # Lines must have a blank line after them to be spoken. This allows you to dynamically add lines to the end of the script during a session and not have them spoken until you hit enter
