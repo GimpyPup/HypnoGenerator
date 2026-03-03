@@ -785,15 +785,15 @@
           continue;
         }
 
-        var blockOpenMatch = token.match(/^BLOCK:(\w+)$/i);
+        var blockOpenMatch = token.match(/^BLOCK:([\w ]+)$/i);
         if (blockOpenMatch) {
-          blockOpen = { name: blockOpenMatch[1].toUpperCase() };
+          blockOpen = { name: blockOpenMatch[1].trim().toUpperCase() };
           continue;
         }
 
-        var blockCloseMatch = token.match(/^\/BLOCK:(\w+)$/i);
+        var blockCloseMatch = token.match(/^\/BLOCK:([\w ]+)$/i);
         if (blockCloseMatch) {
-          blockClose = { name: blockCloseMatch[1].toUpperCase() };
+          blockClose = { name: blockCloseMatch[1].trim().toUpperCase() };
           continue;
         }
 
